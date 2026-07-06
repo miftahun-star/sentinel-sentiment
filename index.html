@@ -1028,14 +1028,14 @@
           // Safely resolve each point
           const resolvePoint = (pt, fallbackIdx) => {
             if (pt && typeof pt === 'object' && pt.price !== undefined) {
-              if (pt.time !== undefined && pt.time !== null && !isNaN(pt.time)) {
-                return { time: Math.floor(pt.time / 1000), value: pt.price };
-              }
               if (pt.index !== undefined && pt.index !== null && !isNaN(pt.index)) {
                 const idx = Math.max(0, Math.min(tvCandles.length - 1, Math.floor(pt.index)));
                 if (tvCandles[idx]) {
                   return { time: tvCandles[idx].time, value: pt.price };
                 }
+              }
+              if (pt.time !== undefined && pt.time !== null && !isNaN(pt.time)) {
+                return { time: Math.floor(pt.time / 1000), value: pt.price };
               }
             }
             const fallbackVal = (pt && typeof pt === 'object') ? pt.price : pt;
