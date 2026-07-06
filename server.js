@@ -177,31 +177,25 @@ function getPivots(candles, strength = 3) {
   const pivots = [];
   
   for (let i = strength; i < candles.length - strength; i++) {
-    // Noise filtering: Gunakan tubuh candle (open/close) untuk mendeteksi puncak pivot
-    const currentHigh = Math.max(candles[i].open, candles[i].close);
-    const currentLow = Math.min(candles[i].open, candles[i].close);
+    const currentHigh = candles[i].high;
+    const currentLow = candles[i].low;
     
     let isHigh = true;
     let isLow = true;
     
     for (let j = 1; j <= strength; j++) {
-      const prevHigh = Math.max(candles[i - j].open, candles[i - j].close);
-      const nextHigh = Math.max(candles[i + j].open, candles[i + j].close);
-      if (prevHigh >= currentHigh || nextHigh > currentHigh) {
+      if (candles[i - j].high >= currentHigh || candles[i + j].high > currentHigh) {
         isHigh = false;
       }
-      
-      const prevLow = Math.min(candles[i - j].open, candles[i - j].close);
-      const nextLow = Math.min(candles[i + j].open, candles[i + j].close);
-      if (prevLow <= currentLow || nextLow < currentLow) {
+      if (candles[i - j].low <= currentLow || candles[i + j].low < currentLow) {
         isLow = false;
       }
     }
     
     if (isHigh) {
-      pivots.push({ type: 'high', price: candles[i].high, time: candles[i].time, index: i });
+      pivots.push({ type: 'high', price: currentHigh, time: candles[i].time, index: i });
     } else if (isLow) {
-      pivots.push({ type: 'low', price: candles[i].low, time: candles[i].time, index: i });
+      pivots.push({ type: 'low', price: currentLow, time: candles[i].time, index: i });
     }
   }
   
@@ -264,15 +258,8 @@ function detectHarmonics(candles, period = 'H1') {
       const rXD_XC = diffCD / diffXC; // D vs XC
       const rCD_BC = diffCD / diffBC; // D vs BC
       
-      // Kalibrasi toleransi secara dinamis sesuai sensitivitas timeframe (Bagian 13.3 Panduan)
-      let tolerance = 0.05; // Default H4/Daily (5%)
-      if (period === 'M1' || period === 'M5' || period === 'M15' || period === 'M30') {
-        tolerance = 0.025; // TF Rendah (2.5%) - disesuaikan agar tidak terlalu ekstrem tapi tetap menyaring noise
-      } else if (period === 'H1' || period === 'H2' || period === 'H3') {
-        tolerance = 0.038; // TF Menengah (3.8%)
-      } else {
-        tolerance = 0.055; // TF Tinggi H4/Daily/Weekly (5.5%)
-      }
+      // Standard fixed 5% tolerance as defined in the 15-part guide
+      let tolerance = 0.05;
       
       const isWithin = (val, target) => Math.abs(val - target) <= tolerance;
       
