@@ -538,33 +538,110 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       fetch(klineUrl).then(r => r.json()).catch(() => null)
     ]);
 
-    if (!klineRes || !klineRes.result || !klineRes.result.list || klineRes.result.list.length === 0) {
-      return res.status(502).json({ error: 'Failed to fetch market data from exchange' });
-    }
-
-    const rawCandles = klineRes.result.list.map(c => ({
-      time: parseInt(c[0]),
-      open: parseFloat(c[1]),
-      high: parseFloat(c[2]),
-      low: parseFloat(c[3]),
-      close: parseFloat(c[4]),
-      volume: parseFloat(c[5])
-    })).reverse();
-
-    const currentPrice = rawCandles[rawCandles.length - 1].close;
-    
-    // Fetch 24h Ticker for Change %
-    const tickerUrl = `https://api.bytick.com/v5/market/tickers?category=linear&symbol=${symbol}`;
-    const tickerRes = await fetch(tickerUrl).then(r => r.json()).catch(() => null);
+    let candles = [];
+    let currentPrice = 0;
     let change24h = 0;
-    if (tickerRes?.result?.list?.[0]) {
-      change24h = parseFloat(tickerRes.result.list[0].price24hPcnt) * 100;
+    let klineFailed = !klineRes || !klineRes.result || !klineRes.result.list || klineRes.result.list.length === 0;
+
+    if (klineFailed) {
+      console.log(`Bybit fetch failed for ${symbol}, falling back to Yahoo Finance`);
+      const yahooSymbol = symbol === 'BTCUSDT' ? 'BTC-USD' : (symbol === 'ETHUSDT' ? 'ETH-USD' : 'SOL-USD');
+      
+      let yfInterval = '1h';
+      let yfRange = '30d';
+      if (period === 'M1') { yfInterval = '1m'; yfRange = '1d'; }
+      else if (period === 'M5') { yfInterval = '5m'; yfRange = '5d'; }
+      else if (period === 'M15') { yfInterval = '15m'; yfRange = '10d'; }
+      else if (period === 'M30') { yfInterval = '30m'; yfRange = '15d'; }
+      else if (period === 'H1') { yfInterval = '1h'; yfRange = '30d'; }
+      else if (period === 'H2' || period === 'H3' || period === 'H4') { yfInterval = '1h'; yfRange = '90d'; }
+      else if (period === 'D1') { yfInterval = '1d'; yfRange = '360d'; }
+      else if (period === 'W1') { yfInterval = '1wk'; yfRange = '720d'; }
+      else if (period === '1M' || period === '1month') { yfInterval = '1mo'; yfRange = '1800d'; }
+
+      const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${yfInterval}&range=${yfRange}`;
+      const yfResponse = await fetch(yfUrl);
+      const yfData = await yfResponse.json();
+
+      if (!yfData.chart?.result?.[0]) {
+        return res.status(502).json({ error: 'Failed to fetch market data from Bybit and Yahoo Finance' });
+      }
+
+      const result = yfData.chart.result[0];
+      const timestamps = result.timestamp || [];
+      const quote = result.indicators?.quote?.[0] || {};
+      const open = quote.open || [];
+      const high = quote.high || [];
+      const low = quote.low || [];
+      const close = quote.close || [];
+      const volume = quote.volume || [];
+
+      let rawCandles = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        if (open[i] !== null && close[i] !== null) {
+          rawCandles.push({
+            time: timestamps[i] * 1000,
+            open: open[i],
+            high: high[i],
+            low: low[i],
+            close: close[i],
+            volume: volume[i] || 0
+          });
+        }
+      }
+
+      if (period === 'H2' || period === 'H3' || period === 'H4') {
+        const multiplier = period === 'H2' ? 2 : period === 'H3' ? 3 : 4;
+        const aggregated = [];
+        for (let i = 0; i < rawCandles.length; i += multiplier) {
+          const chunk = rawCandles.slice(i, i + multiplier);
+          if (chunk.length > 0) {
+            aggregated.push({
+              time: chunk[0].time,
+              open: chunk[0].open,
+              high: Math.max(...chunk.map(c => c.high)),
+              low: Math.min(...chunk.map(c => c.low)),
+              close: chunk[chunk.length - 1].close,
+              volume: chunk.reduce((sum, c) => sum + c.volume, 0)
+            });
+          }
+        }
+        candles = aggregated;
+      } else {
+        candles = rawCandles;
+      }
+
+      if (candles.length === 0) {
+        return res.status(502).json({ error: 'Failed to fetch market data from Bybit and Yahoo Finance' });
+      }
+
+      currentPrice = candles[candles.length - 1].close;
+      const dayAgoTime = Date.now() - 24 * 60 * 60 * 1000;
+      const dayAgoCandle = candles.find(c => c.time >= dayAgoTime) || candles[0];
+      change24h = ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100;
     } else {
-      const open24h = rawCandles[0].open;
-      change24h = ((currentPrice - open24h) / open24h) * 100;
+      const rawCandles = klineRes.result.list.map(c => ({
+        time: parseInt(c[0]),
+        open: parseFloat(c[1]),
+        high: parseFloat(c[2]),
+        low: parseFloat(c[3]),
+        close: parseFloat(c[4]),
+        volume: parseFloat(c[5])
+      })).reverse();
+      candles = rawCandles;
+      currentPrice = candles[candles.length - 1].close;
+
+      const tickerUrl = `https://api.bytick.com/v5/market/tickers?category=linear&symbol=${symbol}`;
+      const tickerRes = await fetch(tickerUrl).then(r => r.json()).catch(() => null);
+      if (tickerRes?.result?.list?.[0]) {
+        change24h = parseFloat(tickerRes.result.list[0].price24hPcnt) * 100;
+      } else {
+        const open24h = candles[0].open;
+        change24h = ((currentPrice - open24h) / open24h) * 100;
+      }
     }
 
-    const analysis = analyzeSentimentAndIndicators(rawCandles, period);
+    const analysis = analyzeSentimentAndIndicators(candles, period);
 
     // Get actual account ratios from Bybit
     let buyRatio = analysis.buyRatio;
@@ -576,16 +653,16 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       sellRatio = parseFloat(ratioRes.result.list[0].sellRatio);
 
       if (buyRatio > 0.65) {
-        sentimentStatus = rawCandles[rawCandles.length - 1].close < analysis.indicators.ema50 ? 'TRAPPED_LONG' : 'EXTREME_LONG';
+        sentimentStatus = candles[candles.length - 1].close < analysis.indicators.ema50 ? 'TRAPPED_LONG' : 'EXTREME_LONG';
       } else if (sellRatio > 0.65) {
-        sentimentStatus = rawCandles[rawCandles.length - 1].close > analysis.indicators.ema50 ? 'TRAPPED_SHORT' : 'EXTREME_SHORT';
+        sentimentStatus = candles[candles.length - 1].close > analysis.indicators.ema50 ? 'TRAPPED_SHORT' : 'EXTREME_SHORT';
       } else {
         sentimentStatus = 'HEALTHY';
       }
     }
 
     if (period === 'M1') {
-      const lastCandle = rawCandles[rawCandles.length - 1];
+      const lastCandle = candles[candles.length - 1];
       const body = lastCandle.close - lastCandle.open;
       const pct = body / lastCandle.open;
       buyRatio -= pct * 5;
@@ -600,7 +677,7 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       buyRatio: parseFloat(buyRatio.toFixed(4)),
       sellRatio: parseFloat(sellRatio.toFixed(4)),
       status: sentimentStatus,
-      candles: rawCandles.slice(-30),
+      candles: candles.slice(-30),
       indicators: analysis.indicators
     });
 
