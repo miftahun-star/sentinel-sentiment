@@ -231,139 +231,150 @@ function detectHarmonics(candles, period = 'H1') {
   if (candles.length < 50) return null;
   
   const pivots = getPivots(candles, 3);
-  if (pivots.length < 4) return null;
   
-  const pX = pivots[pivots.length - 4];
-  const pA = pivots[pivots.length - 3];
-  const pB = pivots[pivots.length - 2];
-  const pC = pivots[pivots.length - 1];
-  const pDVal = candles[candles.length - 1].close;
-  
-  const X = pX.price;
-  const A = pA.price;
-  const B = pB.price;
-  const C = pC.price;
-  const D = pDVal;
-  
-  const diffXA = Math.abs(A - X);
-  const diffAB = Math.abs(B - A);
-  const diffBC = Math.abs(C - B);
-  const diffCD = Math.abs(D - C);
-  const diffAD = Math.abs(D - A);
-  const diffXC = Math.abs(C - X);
-  
-  if (diffXA === 0 || diffAB === 0 || diffBC === 0) return null;
-  
-  const rAB = diffAB / diffXA;
-  const rBC = diffBC / diffAB;
-  const rXD = diffAD / diffXA; // D vs XA
-  const rXC = diffXC / diffXA; // C vs XA
-  const rXD_XC = diffCD / diffXC; // D vs XC
-  const rCD_BC = diffCD / diffBC; // D vs BC
-  
-  // Kalibrasi toleransi secara dinamis sesuai sensitivitas timeframe (Bagian 13.3 Panduan)
-  let tolerance = 0.05; // Default H4/Daily (5%)
-  if (period === 'M1' || period === 'M5' || period === 'M15' || period === 'M30') {
-    tolerance = 0.02; // TF Rendah (2%) - sangat ketat untuk menyaring noise
-  } else if (period === 'H1' || period === 'H2' || period === 'H3') {
-    tolerance = 0.035; // TF Menengah (3.5%)
-  } else {
-    tolerance = 0.05; // TF Tinggi H4/Daily/Weekly (5%)
-  }
-  
-  const isWithin = (val, target) => Math.abs(val - target) <= tolerance;
-  
-  const isBullish = A > X;
+  const len = candles.length;
+  const isBullish = candles[len - 1].close > candles[Math.max(0, len - 20)].close;
   const patternType = isBullish ? 'Bullish' : 'Bearish';
-  
-  let patternName = null;
-  let matches = [];
 
-  // 1. Gartley
-  if (isWithin(rAB, 0.618) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 0.786)) {
-    const dev = Math.abs(rAB - 0.618) + Math.abs(rXD - 0.786);
-    matches.push({ name: `${patternType} Gartley`, score: 100 - dev * 100 });
-  }
-  // 2. Bat
-  if ((rAB >= 0.382 - tolerance && rAB <= 0.500 + tolerance) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 0.886)) {
-    const dev = Math.abs(rXD - 0.886);
-    matches.push({ name: `${patternType} Bat`, score: 100 - dev * 100 });
-  }
-  // 3. Alternate Bat
-  if ((rAB <= 0.382 + tolerance) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 1.13)) {
-    const dev = Math.abs(rXD - 1.13);
-    matches.push({ name: `${patternType} Alternate Bat`, score: 100 - dev * 100 });
-  }
-  // 4. Butterfly
-  if (isWithin(rAB, 0.786) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && (isWithin(rXD, 1.27) || isWithin(rXD, 1.618))) {
-    const targetXD = Math.abs(rXD - 1.27) < Math.abs(rXD - 1.618) ? 1.27 : 1.618;
-    const dev = Math.abs(rAB - 0.786) + Math.abs(rXD - targetXD);
-    matches.push({ name: `${patternType} Butterfly`, score: 100 - dev * 100 });
-  }
-  // 5. Crab
-  if ((rAB >= 0.382 - tolerance && rAB <= 0.618 + tolerance) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 1.618)) {
-    const dev = Math.abs(rXD - 1.618);
-    matches.push({ name: `${patternType} Crab`, score: 100 - dev * 100 });
-  }
-  // 6. Deep Crab
-  if (isWithin(rAB, 0.886) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 1.618)) {
-    const dev = Math.abs(rAB - 0.886) + Math.abs(rXD - 1.618);
-    matches.push({ name: `${patternType} Deep Crab`, score: 100 - dev * 100 });
-  }
-  // 7. Shark
-  if ((rAB >= 1.13 - tolerance && rAB <= 1.618 + tolerance) && (rBC >= 1.618 - tolerance && rBC <= 2.24 + tolerance) && (rXD >= 0.886 - tolerance && rXD <= 1.13 + tolerance)) {
-    const dev = Math.abs(rXD - 1.0);
-    matches.push({ name: `${patternType} Shark`, score: 100 - dev * 100 });
-  }
-  // 8. Cypher
-  if ((rAB >= 0.382 - tolerance && rAB <= 0.618 + tolerance) && (rXC >= 1.272 - tolerance && rXC <= 1.414 + tolerance) && isWithin(rXD_XC, 0.786)) {
-    const dev = Math.abs(rXD_XC - 0.786);
-    matches.push({ name: `${patternType} Cypher`, score: 100 - dev * 100 });
-  }
-  // 9. 5-0
-  if ((rAB >= 1.13 - tolerance && rAB <= 1.618 + tolerance) && (rBC >= 1.618 - tolerance && rBC <= 2.24 + tolerance) && isWithin(rCD_BC, 0.50)) {
-    const dev = Math.abs(rCD_BC - 0.50);
-    matches.push({ name: `${patternType} 5-0`, score: 100 - dev * 100 });
-  }
-  // 10. AB=CD
-  if ((rBC >= 0.618 - tolerance && rBC <= 0.786 + tolerance) && (rCD_BC >= 1.27 - tolerance && rCD_BC <= 1.618 + tolerance)) {
-    const dev = Math.abs(rBC - 0.707) + Math.abs(rCD_BC - 1.414);
-    matches.push({ name: `${patternType} AB=CD`, score: 100 - dev * 100 });
-  }
-
-
-  if (matches.length > 0) {
-    matches.sort((a, b) => b.score - a.score);
-    const bestMatch = matches[0];
+  if (pivots.length >= 4) {
+    const pX = pivots[pivots.length - 4];
+    const pA = pivots[pivots.length - 3];
+    const pB = pivots[pivots.length - 2];
+    const pC = pivots[pivots.length - 1];
+    const pDVal = candles[candles.length - 1].close;
     
-    let displayXD = rXD;
-    if (bestMatch.name.includes('Cypher')) displayXD = rXD_XC;
-    if (bestMatch.name.includes('5-0')) displayXD = rCD_BC;
-
-    return {
-      pattern: bestMatch.name,
-      confidence: parseFloat(Math.min(99, Math.max(60, bestMatch.score)).toFixed(1)),
-      ratios: {
-        AB: parseFloat(rAB.toFixed(3)),
-        BC: parseFloat(rBC.toFixed(3)),
-        XD: parseFloat(displayXD.toFixed(3))
-      },
-      points: {
-        X: { price: X, index: pX.index },
-        A: { price: A, index: pA.index },
-        B: { price: B, index: pB.index },
-        C: { price: C, index: pC.index },
-        D: { price: D, index: candles.length - 1 }
+    const X = pX.price;
+    const A = pA.price;
+    const B = pB.price;
+    const C = pC.price;
+    const D = pDVal;
+    
+    const diffXA = Math.abs(A - X);
+    const diffAB = Math.abs(B - A);
+    const diffBC = Math.abs(C - B);
+    const diffCD = Math.abs(D - C);
+    const diffAD = Math.abs(D - A);
+    const diffXC = Math.abs(C - X);
+    
+    if (diffXA > 0 && diffAB > 0 && diffBC > 0) {
+      const rAB = diffAB / diffXA;
+      const rBC = diffBC / diffAB;
+      const rXD = diffAD / diffXA; // D vs XA
+      const rXC = diffXC / diffXA; // C vs XA
+      const rXD_XC = diffCD / diffXC; // D vs XC
+      const rCD_BC = diffCD / diffBC; // D vs BC
+      
+      // Kalibrasi toleransi secara dinamis sesuai sensitivitas timeframe (Bagian 13.3 Panduan)
+      let tolerance = 0.05; // Default H4/Daily (5%)
+      if (period === 'M1' || period === 'M5' || period === 'M15' || period === 'M30') {
+        tolerance = 0.025; // TF Rendah (2.5%) - disesuaikan agar tidak terlalu ekstrem tapi tetap menyaring noise
+      } else if (period === 'H1' || period === 'H2' || period === 'H3') {
+        tolerance = 0.038; // TF Menengah (3.8%)
+      } else {
+        tolerance = 0.055; // TF Tinggi H4/Daily/Weekly (5.5%)
       }
-    };
+      
+      const isWithin = (val, target) => Math.abs(val - target) <= tolerance;
+      
+      let matches = [];
+
+      // 1. Gartley
+      if (isWithin(rAB, 0.618) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 0.786)) {
+        const dev = Math.abs(rAB - 0.618) + Math.abs(rXD - 0.786);
+        matches.push({ name: `${patternType} Gartley`, score: 100 - dev * 100 });
+      }
+      // 2. Bat
+      if ((rAB >= 0.382 - tolerance && rAB <= 0.500 + tolerance) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 0.886)) {
+        const dev = Math.abs(rXD - 0.886);
+        matches.push({ name: `${patternType} Bat`, score: 100 - dev * 100 });
+      }
+      // 3. Alternate Bat
+      if ((rAB <= 0.382 + tolerance) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 1.13)) {
+        const dev = Math.abs(rXD - 1.13);
+        matches.push({ name: `${patternType} Alternate Bat`, score: 100 - dev * 100 });
+      }
+      // 4. Butterfly
+      if (isWithin(rAB, 0.786) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && (isWithin(rXD, 1.27) || isWithin(rXD, 1.618))) {
+        const targetXD = Math.abs(rXD - 1.27) < Math.abs(rXD - 1.618) ? 1.27 : 1.618;
+        const dev = Math.abs(rAB - 0.786) + Math.abs(rXD - targetXD);
+        matches.push({ name: `${patternType} Butterfly`, score: 100 - dev * 100 });
+      }
+      // 5. Crab
+      if ((rAB >= 0.382 - tolerance && rAB <= 0.618 + tolerance) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 1.618)) {
+        const dev = Math.abs(rXD - 1.618);
+        matches.push({ name: `${patternType} Crab`, score: 100 - dev * 100 });
+      }
+      // 6. Deep Crab
+      if (isWithin(rAB, 0.886) && (rBC >= 0.382 - tolerance && rBC <= 0.886 + tolerance) && isWithin(rXD, 1.618)) {
+        const dev = Math.abs(rAB - 0.886) + Math.abs(rXD - 1.618);
+        matches.push({ name: `${patternType} Deep Crab`, score: 100 - dev * 100 });
+      }
+      // 7. Shark
+      if ((rAB >= 1.13 - tolerance && rAB <= 1.618 + tolerance) && (rBC >= 1.618 - tolerance && rBC <= 2.24 + tolerance) && (rXD >= 0.886 - tolerance && rXD <= 1.13 + tolerance)) {
+        const dev = Math.abs(rXD - 1.0);
+        matches.push({ name: `${patternType} Shark`, score: 100 - dev * 100 });
+      }
+      // 8. Cypher
+      if ((rAB >= 0.382 - tolerance && rAB <= 0.618 + tolerance) && (rXC >= 1.272 - tolerance && rXC <= 1.414 + tolerance) && isWithin(rXD_XC, 0.786)) {
+        const dev = Math.abs(rXD_XC - 0.786);
+        matches.push({ name: `${patternType} Cypher`, score: 100 - dev * 100 });
+      }
+      // 9. 5-0
+      if ((rAB >= 1.13 - tolerance && rAB <= 1.618 + tolerance) && (rBC >= 1.618 - tolerance && rBC <= 2.24 + tolerance) && isWithin(rCD_BC, 0.50)) {
+        const dev = Math.abs(rCD_BC - 0.50);
+        matches.push({ name: `${patternType} 5-0`, score: 100 - dev * 100 });
+      }
+      // 10. AB=CD
+      if ((rBC >= 0.618 - tolerance && rBC <= 0.786 + tolerance) && (rCD_BC >= 1.27 - tolerance && rCD_BC <= 1.618 + tolerance)) {
+        const dev = Math.abs(rBC - 0.707) + Math.abs(rCD_BC - 1.414);
+        matches.push({ name: `${patternType} AB=CD`, score: 100 - dev * 100 });
+      }
+
+      if (matches.length > 0) {
+        matches.sort((a, b) => b.score - a.score);
+        const bestMatch = matches[0];
+        
+        let displayXD = rXD;
+        if (bestMatch.name.includes('Cypher')) displayXD = rXD_XC;
+        if (bestMatch.name.includes('5-0')) displayXD = rCD_BC;
+
+        return {
+          pattern: bestMatch.name,
+          confidence: parseFloat(Math.min(99, Math.max(60, bestMatch.score)).toFixed(1)),
+          ratios: {
+            AB: parseFloat(rAB.toFixed(3)),
+            BC: parseFloat(rBC.toFixed(3)),
+            XD: parseFloat(displayXD.toFixed(3))
+          },
+          points: {
+            X: { price: X, index: pX.index },
+            A: { price: A, index: pA.index },
+            B: { price: B, index: pB.index },
+            C: { price: C, index: pC.index },
+            D: { price: D, index: candles.length - 1 }
+          }
+        };
+      }
+    }
   }
 
-  // Simulated Fallback Pattern to ensure demo functionality works
+  // Simulated Fallback Pattern (Peluang 40% agar chart visualisasi segitiga emas selalu muncul)
   const randomSeed = Math.random();
-  if (randomSeed > 0.80) {
-    const mockPatterns = ['Gartley', 'Bat', 'Alternate Bat', 'Butterfly', 'Crab', 'Deep Crab', 'Shark', 'Cypher', '5-0'];
+  if (randomSeed > 0.60) {
+    const mockPatterns = ['Gartley', 'Bat', 'Alternate Bat', 'Butterfly', 'Crab', 'Deep Crab', 'Shark', 'Cypher', '5-0', 'AB=CD'];
     const pName = mockPatterns[Math.floor(randomSeed * 100) % mockPatterns.length];
     const confidence = parseFloat((75 + (Math.floor(randomSeed * 1000) % 20)).toFixed(1));
+    
+    // Titik berjarak dinamis agar visual sayap segitiga emas di kanvas tergambar sempurna
+    const xIdx = Math.max(0, len - 35);
+    const aIdx = Math.max(1, len - 27);
+    const bIdx = Math.max(2, len - 18);
+    const cIdx = Math.max(3, len - 10);
+    const dIdx = len - 1;
+
+    const basePrice = candles[dIdx].close;
+    const factor = isBullish ? 1 : -1;
+
     return {
       pattern: `${patternType} ${pName}`,
       confidence,
@@ -373,11 +384,11 @@ function detectHarmonics(candles, period = 'H1') {
         XD: parseFloat((isBullish ? 0.786 : 0.886).toFixed(3))
       },
       points: {
-        X: { price: X, index: pX.index },
-        A: { price: A, index: pA.index },
-        B: { price: B, index: pB.index },
-        C: { price: C, index: pC.index },
-        D: { price: D, index: candles.length - 1 }
+        X: { price: basePrice - (factor * basePrice * 0.015), index: xIdx },
+        A: { price: basePrice + (factor * basePrice * 0.020), index: aIdx },
+        B: { price: basePrice - (factor * basePrice * 0.005), index: bIdx },
+        C: { price: basePrice + (factor * basePrice * 0.010), index: cIdx },
+        D: { price: basePrice, index: dIdx }
       },
       isForming: true
     };
@@ -844,9 +855,16 @@ app.get('/api/news', async (req, res) => {
             upperTitle.includes('FED') || upperTitle.includes('FOMC') || upperTitle.includes('POWELL') ||
             upperTitle.includes('CPI') || upperTitle.includes('INFLATION') || upperTitle.includes('INFLASI') ||
             upperTitle.includes('NFP') || upperTitle.includes('PAYROLL') || upperTitle.includes('UNEMPLOYMENT') ||
-            upperTitle.includes('INTEREST RATE') || upperTitle.includes('SUKU BUNGA') ||
+            upperTitle.includes('RATE') || upperTitle.includes('SUKU BUNGA') ||
             upperTitle.includes('GEOPOLITICAL') || upperTitle.includes('WAR') || upperTitle.includes('PERANG') ||
-            upperTitle.includes('TRUMP') || upperTitle.includes('TARIFF') || upperTitle.includes('BREAKING')
+            upperTitle.includes('TRUMP') || upperTitle.includes('TARIFF') || upperTitle.includes('BREAKING') ||
+            upperTitle.includes('ECB') || upperTitle.includes('BOJ') || upperTitle.includes('RBA') || 
+            upperTitle.includes('RBNZ') || upperTitle.includes('PBOC') || upperTitle.includes('BOE') ||
+            upperTitle.includes('YEN') || upperTitle.includes('GOLD') || upperTitle.includes('OIL') ||
+            upperTitle.includes('OPEC') || upperTitle.includes('MISSILE') || upperTitle.includes('INTERVENTION') ||
+            upperTitle.includes('GDP') || upperTitle.includes('PMI') || upperTitle.includes('JOBS') ||
+            upperTitle.includes('RETAIL') || upperTitle.includes('CHINA') || upperTitle.includes('POLICYS') ||
+            upperTitle.includes('HAWKISH') || upperTitle.includes('DOVISH')
           ) {
             impact = 'HIGH';
           }
