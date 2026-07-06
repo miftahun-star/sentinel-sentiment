@@ -1027,7 +1027,7 @@
 
           // Safely resolve each point
           const resolvePoint = (pt, fallbackIdx) => {
-            if (typeof pt === 'object' && pt.price !== undefined) {
+            if (pt && typeof pt === 'object' && pt.price !== undefined) {
               if (pt.time !== undefined) {
                 return { time: Math.floor(pt.time / 1000), value: pt.price };
               }
@@ -1037,7 +1037,7 @@
               }
             }
             const idx = Math.max(0, Math.min(tvCandles.length - 1, fallbackIdx));
-            return { time: tvCandles[idx].time, value: typeof pt === 'object' ? pt.price : pt };
+            return { time: tvCandles[idx].time, value: (pt && typeof pt === 'object') ? pt.price : pt };
           };
 
           const pX = resolvePoint(pts.X, 0);
@@ -1094,6 +1094,17 @@
             const cB = getCoords(pB);
             const cC = getCoords(pC);
             const cD = getCoords(pD);
+
+            // Abort drawing if any coordinate is NaN
+            if (
+              cX.x === null || cX.y === null || isNaN(cX.x) || isNaN(cX.y) ||
+              cA.x === null || cA.y === null || isNaN(cA.x) || isNaN(cA.y) ||
+              cB.x === null || cB.y === null || isNaN(cB.x) || isNaN(cB.y) ||
+              cC.x === null || cC.y === null || isNaN(cC.x) || isNaN(cC.y) ||
+              cD.x === null || cD.y === null || isNaN(cD.x) || isNaN(cD.y)
+            ) {
+              return;
+            }
 
             // Draw shaded triangles X-A-B and B-C-D
             ctx.fillStyle = 'rgba(234, 179, 8, 0.12)';
@@ -1995,89 +2006,97 @@
             </div>
           </div>
 
-          {asset.indicators && asset.indicators.harmonicPattern && (
-            <div class={`rounded-2xl border p-5 ${
-              asset.indicators.harmonicPattern.pattern.includes('Bullish')
-                ? 'border-green-500/20 bg-green-500/[0.02]'
-                : 'border-orange-500/20 bg-orange-500/[0.02]'
-            }`}>
-              <div class="flex items-center justify-between border-b border-white/5 pb-2">
-                <h4 class="text-xs font-bold uppercase tracking-wider text-white">Harmonic Pattern Detected</h4>
-                <span class={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                  asset.indicators.harmonicPattern.pattern.includes('Bullish')
-                    ? 'bg-green-500/10 text-green-400'
-                    : 'bg-orange-500/10 text-orange-400'
-                }`}>
-                  {asset.indicators.harmonicPattern.pattern}
-                </span>
-              </div>
-              
-              <div class="mt-3 space-y-2 text-xs">
-                <div class="flex justify-between">
-                  <span class="text-zinc-500">Pattern Match Confidence</span>
-                  <span class="text-white font-mono font-bold">{asset.indicators.harmonicPattern.confidence}%</span>
-                </div>
-                <div class="flex justify-between border-b border-white/[0.03] pb-1">
-                  <span class="text-zinc-500">Rasio AB Retracement</span>
-                  <span class="text-zinc-300 font-mono">{asset.indicators.harmonicPattern.ratios.AB}</span>
-                </div>
-                <div class="flex justify-between border-b border-white/[0.03] pb-1">
-                  <span class="text-zinc-500">Rasio BC Retracement</span>
-                  <span class="text-zinc-300 font-mono">{asset.indicators.harmonicPattern.ratios.BC}</span>
-                </div>
-                <div class="flex justify-between border-b border-white/[0.03] pb-1">
-                  <span class="text-zinc-500">Rasio XD Retracement (D)</span>
-                  <span class="text-zinc-300 font-mono">{asset.indicators.harmonicPattern.ratios.XD}</span>
-                </div>
-              </div>
+          {asset.indicators && asset.indicators.harmonicPattern && (() => {
+            const hp = asset.indicators.harmonicPattern;
+            const pattern = hp.pattern || '';
+            const confidence = hp.confidence || 0;
+            const ratios = hp.ratios || {};
+            const isBullish = pattern.includes('Bullish');
+            const isSharkOrCypher = pattern.includes('Shark') || pattern.includes('Cypher');
 
-              <div class="mt-4 rounded-lg bg-zinc-900/40 p-2.5 text-[11px] leading-relaxed text-zinc-300">
-                <strong>Confluence Analysis:</strong> Pola <strong>{asset.indicators.harmonicPattern.pattern}</strong> selesai terbentuk di Point D. 
-                {asset.indicators.harmonicPattern.pattern.includes('Bullish')
-                  ? ' Hal ini mengonfirmasi zona pembalikan arah naik (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang shorting. Sinyal beli terkonfirmasi.'
-                  : ' Hal ini mengonfirmasi zona pembalikan arah turun (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang melakukan pembelian. Sinyal jual terkonfirmasi.'
-                }
-              </div>
+            return (
+              <div class={`rounded-2xl border p-5 ${
+                isBullish
+                  ? 'border-green-500/20 bg-green-500/[0.02]'
+                  : 'border-orange-500/20 bg-orange-500/[0.02]'
+              }`}>
+                <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                  <h4 class="text-xs font-bold uppercase tracking-wider text-white">Harmonic Pattern Detected</h4>
+                  <span class={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                    isBullish
+                      ? 'bg-green-500/10 text-green-400'
+                      : 'bg-orange-500/10 text-orange-400'
+                  }`}>
+                    {pattern}
+                  </span>
+                </div>
+                
+                <div class="mt-3 space-y-2 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-zinc-500">Pattern Match Confidence</span>
+                    <span class="text-white font-mono font-bold">{confidence}%</span>
+                  </div>
+                  <div class="flex justify-between border-b border-white/[0.03] pb-1">
+                    <span class="text-zinc-500">Rasio AB Retracement</span>
+                    <span class="text-zinc-300 font-mono">{ratios.AB !== undefined ? ratios.AB : 'N/A'}</span>
+                  </div>
+                  <div class="flex justify-between border-b border-white/[0.03] pb-1">
+                    <span class="text-zinc-500">Rasio BC Retracement</span>
+                    <span class="text-zinc-300 font-mono">{ratios.BC !== undefined ? ratios.BC : 'N/A'}</span>
+                  </div>
+                  <div class="flex justify-between border-b border-white/[0.03] pb-1">
+                    <span class="text-zinc-500">Rasio XD Retracement (D)</span>
+                    <span class="text-zinc-300 font-mono">{ratios.XD !== undefined ? ratios.XD : 'N/A'}</span>
+                  </div>
+                </div>
 
-              {/* Timeframe Accuracy Rating / Alert */}
-              <div class="mt-3 text-[11px] leading-relaxed">
-                {(() => {
-                  const tf = timeframe || 'H1';
-                  const isSharkOrCypher = asset.indicators.harmonicPattern.pattern.includes('Shark') || asset.indicators.harmonicPattern.pattern.includes('Cypher');
-                  
-                  if (tf === 'M1' || tf === 'M5' || tf === 'M15') {
-                    return (
-                      <div class="rounded-lg border border-red-500/20 bg-red-950/10 p-2.5 text-red-400">
-                        <strong class="text-red-400 block uppercase mb-1">⚠️ Akurasi Sangat Rendah (TF {tf})</strong>
-                        Sistem mendeteksi pola di Timeframe Rendah (M1-M15). Spread/slippage mengambil porsi besar dari panjang leg, dan swing point sering kali berupa stop-hunt alogaritma, bukan pergeseran supply-demand riil. Gunakan TF ini <strong>hanya untuk mencari konfirmasi entri Stochastic/BB</strong> yang tajam setelah zona PRZ dihitung dari H1-H4.
-                      </div>
-                    );
-                  } else if (tf === 'M30' || tf === 'H1') {
-                    return (
-                      <div class="rounded-lg border border-orange-500/20 bg-orange-950/10 p-2.5 text-orange-400">
-                        <strong class="text-orange-400 block uppercase mb-1">⚠️ TF Menengah / Butuh Konfirmasi (TF {tf})</strong>
-                        Sinyal mulai layak{isSharkOrCypher ? ' (Shark/Cypher lebih toleran terhadap intraday)' : ''}, tetapi pola rentan invalid oleh 1-2 candle noise. Wajib mencari konfirmasi tambahan seperti divergence Stochastic/RSI dan pola candlestick (pinbar/engulfing) di area PRZ.
-                      </div>
-                    );
-                  } else if (tf === 'H4') {
-                    return (
-                      <div class="rounded-lg border border-green-500/20 bg-green-950/10 p-2.5 text-green-400">
-                        <strong class="text-green-400 block uppercase mb-1">✨ Sweet Spot Harmonic (TF {tf})</strong>
-                        Titik ideal terbaik! Swing point merepresentasikan sesi trading institusional yang bersih dari noise acak. Akurasi geometri Fibonacci berada pada level optimum dengan kuantitas setup reguler.
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div class="rounded-lg border border-emerald-500/20 bg-emerald-950/10 p-2.5 text-emerald-400">
-                        <strong class="text-emerald-400 block uppercase mb-1">💎 Akurasi Maksimal (TF {tf})</strong>
-                        Presisi geometri tertinggi dengan tingkat noise terendah. Pola sangat valid, namun membutuhkan waktu berminggu-minggu untuk terbentuk sempurna. Setup ini sangat berharga.
-                      </div>
-                    );
+                <div class="mt-4 rounded-lg bg-zinc-900/40 p-2.5 text-[11px] leading-relaxed text-zinc-300">
+                  <strong>Confluence Analysis:</strong> Pola <strong>{pattern}</strong> selesai terbentuk di Point D. 
+                  {isBullish
+                    ? ' Hal ini mengonfirmasi zona pembalikan arah naik (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang shorting. Sinyal beli terkonfirmasi.'
+                    : ' Hal ini mengonfirmasi zona pembalikan arah turun (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang melakukan pembelian. Sinyal jual terkonfirmasi.'
                   }
-                })()}
+                </div>
+
+                {/* Timeframe Accuracy Rating / Alert */}
+                <div class="mt-3 text-[11px] leading-relaxed">
+                  {(() => {
+                    const tf = timeframe || 'H1';
+                    
+                    if (tf === 'M1' || tf === 'M5' || tf === 'M15') {
+                      return (
+                        <div class="rounded-lg border border-red-500/20 bg-red-950/10 p-2.5 text-red-400">
+                          <strong class="text-red-400 block uppercase mb-1">⚠️ Akurasi Sangat Rendah (TF {tf})</strong>
+                          Sistem mendeteksi pola di Timeframe Rendah (M1-M15). Spread/slippage mengambil porsi besar dari panjang leg, dan swing point sering kali berupa stop-hunt alogaritma, bukan pergeseran supply-demand riil. Gunakan TF ini <strong>hanya untuk mencari konfirmasi entri Stochastic/BB</strong> yang tajam setelah zona PRZ dihitung dari H1-H4.
+                        </div>
+                      );
+                    } else if (tf === 'M30' || tf === 'H1') {
+                      return (
+                        <div class="rounded-lg border border-orange-500/20 bg-orange-950/10 p-2.5 text-orange-400">
+                          <strong class="text-orange-400 block uppercase mb-1">⚠️ TF Menengah / Butuh Konfirmasi (TF {tf})</strong>
+                          Sinyal mulai layak{isSharkOrCypher ? ' (Shark/Cypher lebih toleran terhadap intraday)' : ''}, tetapi pola rentan invalid oleh 1-2 candle noise. Wajib mencari konfirmasi tambahan seperti divergence Stochastic/RSI dan pola candlestick (pinbar/engulfing) di area PRZ.
+                        </div>
+                      );
+                    } else if (tf === 'H4') {
+                      return (
+                        <div class="rounded-lg border border-green-500/20 bg-green-950/10 p-2.5 text-green-400">
+                          <strong class="text-green-400 block uppercase mb-1">✨ Sweet Spot Harmonic (TF {tf})</strong>
+                          Titik ideal terbaik! Swing point merepresentasikan sesi trading institusional yang bersih dari noise acak. Akurasi geometri Fibonacci berada pada level optimum dengan kuantitas setup reguler.
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <div class="rounded-lg border border-emerald-500/20 bg-emerald-950/10 p-2.5 text-emerald-400">
+                          <strong class="text-emerald-400 block uppercase mb-1">💎 Akurasi Maksimal (TF {tf})</strong>
+                          Presisi geometri tertinggi dengan tingkat noise terendah. Pola sangat valid, namun membutuhkan waktu berminggu-minggu untuk terbentuk sempurna. Setup ini sangat berharga.
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       );
     }
