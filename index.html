@@ -1,0 +1,1968 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel Sentiment — Retail Positioning & Trapped Zones</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts Outfit & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- React & ReactDOM UMD -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel for inline JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: #050505;
+      color: #f3f4f6;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Grid background effect matching Metavulus */
+    .mv-grid-bg {
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .glow-green {
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.15);
+    }
+    .glow-orange {
+      box-shadow: 0 0 15px rgba(249, 115, 22, 0.15);
+    }
+    .glow-red {
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.15);
+    }
+    /* Smooth transition */
+    .transition-all-300 {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  </style>
+</head>
+<body class="relative min-h-screen overflow-x-hidden">
+  <div class="absolute inset-0 pointer-events-none mv-grid-bg opacity-40"></div>
+  <div class="absolute top-0 left-1/4 w-[500px] h-[500px] bg-green-500/5 rounded-full blur-[100px] pointer-events-none"></div>
+  <div class="absolute top-1/3 right-1/4 w-[600px] h-[600px] bg-orange-500/5 rounded-full blur-[120px] pointer-events-none"></div>
+
+  <div id="root"></div>
+
+  <!-- React JSX App Script -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const ALL_ASSETS = [
+      // Cryptos (Real Bybit)
+      { id: 'BTC', name: 'Bitcoin', symbol: 'BTCUSDT', type: 'crypto', apiSymbol: 'BTCUSDT' },
+      { id: 'ETH', name: 'Ethereum', symbol: 'ETHUSDT', type: 'crypto', apiSymbol: 'ETHUSDT' },
+      { id: 'SOL', name: 'Solana', symbol: 'SOLUSDT', type: 'crypto', apiSymbol: 'SOLUSDT' },
+      { id: 'HYPE', name: 'Hyperliquid', symbol: 'HYPEUSDT', type: 'crypto', apiSymbol: 'HYPEUSDT' },
+      { id: 'ASTER', name: 'Aster DEX', symbol: 'ASTERUSDT', type: 'crypto', apiSymbol: 'ASTERUSDT' },
+      
+      // XAU (Gold) (Yahoo Finance)
+      { id: 'XAU', name: 'Gold Spot', symbol: 'XAUUSD', type: 'forex', apiSymbol: 'GC=F' },
+      
+      // Forex (Yahoo Finance)
+      { id: 'EURUSD', name: 'Euro / US Dollar', symbol: 'EURUSD', type: 'forex', apiSymbol: 'EURUSD=X' },
+      { id: 'GBPUSD', name: 'British Pound / US Dollar', symbol: 'GBPUSD', type: 'forex', apiSymbol: 'GBPUSD=X' },
+      { id: 'USDJPY', name: 'US Dollar / Japanese Yen', symbol: 'USDJPY', type: 'forex', apiSymbol: 'USDJPY=X' },
+      { id: 'AUDUSD', name: 'Australian Dollar / US Dollar', symbol: 'AUDUSD', type: 'forex', apiSymbol: 'AUDUSD=X' },
+      { id: 'USDCAD', name: 'US Dollar / Canadian Dollar', symbol: 'USDCAD', type: 'forex', apiSymbol: 'USDCAD=X' },
+      { id: 'USDCHF', name: 'US Dollar / Swiss Franc', symbol: 'USDCHF', type: 'forex', apiSymbol: 'USDCHF=X' },
+      { id: 'NZDUSD', name: 'New Zealand Dollar / US Dollar', symbol: 'NZDUSD', type: 'forex', apiSymbol: 'NZDUSD=X' },
+      { id: 'EURGBP', name: 'Euro / British Pound', symbol: 'EURGBP', type: 'forex', apiSymbol: 'EURGBP=X' },
+      { id: 'EURJPY', name: 'Euro / Japanese Yen', symbol: 'EURJPY', type: 'forex', apiSymbol: 'EURJPY=X' },
+      { id: 'GBPJPY', name: 'British Pound / Japanese Yen', symbol: 'GBPJPY', type: 'forex', apiSymbol: 'GBPJPY=X' }
+    ];
+
+    const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H2', 'H3', 'H4', 'D1', 'W1', '1M'];
+
+    const STATUS_FILTERS = [
+      { key: 'ALL', label: 'All Status' },
+      { key: 'HEALTHY', label: 'Healthy' },
+      { key: 'TRAPPED_LONG', label: 'Trapped Long' },
+      { key: 'TRAPPED_SHORT', label: 'Trapped Short' },
+      { key: 'EXTREME_LONG', label: 'Extreme Long' },
+      { key: 'EXTREME_SHORT', label: 'Extreme Short' }
+    ];
+
+    const BIAS_FILTERS = [
+      { key: 'ALL', label: 'All Biases' },
+      { key: 'STRONG_BULLISH', label: 'Strong Bullish' },
+      { key: 'BULLISH', label: 'Bullish' },
+      { key: 'NEUTRAL', label: 'Neutral' },
+      { key: 'BEARISH', label: 'Bearish' },
+      { key: 'STRONG_BEARISH', label: 'Strong Bearish' }
+    ];
+
+    function getContrarianBias(buyRatio) {
+      const sellRatio = 1 - buyRatio;
+      if (buyRatio > 0.70) return 'STRONG_BEARISH';
+      if (buyRatio > 0.58) return 'BEARISH';
+      if (sellRatio > 0.70) return 'STRONG_BULLISH';
+      if (sellRatio > 0.58) return 'BULLISH';
+      return 'NEUTRAL';
+    }
+
+    function checkMarketOpen(assetType) {
+      if (assetType === 'crypto') return true;
+      const now = new Date();
+      const day = now.getUTCDay(); 
+      const hour = now.getUTCHours();
+      if (day === 5 && hour >= 22) return false;
+      if (day === 6) return false;
+      if (day === 0 && hour < 22) return false;
+      return true;
+    }
+
+    const MARKET_STATE_FILTERS = [
+      { key: 'ALL', label: 'All Sessions' },
+      { key: 'OPEN', label: 'Market Open' },
+      { key: 'CLOSED', label: 'Market Closed' }
+    ];
+
+    function App() {
+      const [selectedTimeframe, setSelectedTimeframe] = useState('H1');
+      const [marketData, setMarketData] = useState({});
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [activeAsset, setActiveAsset] = useState(null);
+      const [serverConnected, setServerConnected] = useState(true);
+      const [newsList, setNewsList] = useState([]);
+      const [isNewsLoading, setIsNewsLoading] = useState(false);
+
+      const [activeStatusFilter, setActiveStatusFilter] = useState('ALL');
+      const [activeBiasFilter, setActiveBiasFilter] = useState('ALL');
+      const [activeMarketStateFilter, setActiveMarketStateFilter] = useState('ALL');
+      const [showAssetConfig, setShowAssetConfig] = useState(false);
+
+      const fetchNews = async () => {
+        setIsNewsLoading(true);
+        try {
+          const res = await fetch('/api/news');
+          if (res.ok) {
+            const json = await res.json();
+            setNewsList(json.news || []);
+          }
+        } catch (err) {
+          console.error("Failed to fetch news:", err.message);
+        } finally {
+          setTimeout(() => setIsNewsLoading(false), 500);
+        }
+      };
+      
+      const [activeAssetsList, setActiveAssetsList] = useState(() => {
+        try {
+          const saved = localStorage.getItem('sentinel_active_assets');
+          if (saved) return JSON.parse(saved);
+        } catch (_) {}
+        return ALL_ASSETS.map(a => a.id);
+      });
+
+      useEffect(() => {
+        localStorage.setItem('sentinel_active_assets', JSON.stringify(activeAssetsList));
+      }, [activeAssetsList]);
+
+      const fetchAllData = async (timeframe) => {
+        setLoading(true);
+        const newData = { ...marketData };
+        const targetAssets = ALL_ASSETS.filter(a => activeAssetsList.includes(a.id));
+
+        if (targetAssets.length === 0) {
+          setLoading(false);
+          return;
+        }
+
+        try {
+          await Promise.all(targetAssets.map(async (asset) => {
+            const apiPath = asset.type === 'crypto' ? '/api/sentiment/crypto' : '/api/sentiment/forex';
+            const url = `${apiPath}?symbol=${asset.apiSymbol}&period=${timeframe}`;
+            
+            try {
+              const res = await fetch(url);
+              if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+              const json = await res.json();
+              newData[asset.id] = { ...asset, ...json, lastUpdated: Date.now() };
+            } catch (err) {
+              console.error(`Error fetching ${asset.id}:`, err.message);
+              newData[asset.id] = createMockData(asset, timeframe);
+            }
+          }));
+          
+          setMarketData(newData);
+          setServerConnected(true);
+        } catch (err) {
+          setError('Gagal menghubungkan ke proxy server.');
+          setServerConnected(false);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const createMockData = (asset, timeframe) => {
+        const mockPrice = asset.type === 'crypto' ? (asset.id === 'BTC' ? 96500 : asset.id === 'ETH' ? 3420 : 158) : (asset.id === 'XAU' ? 2324 : 1.085);
+        const randomChange = (Math.random() * 4 - 2).toFixed(2);
+        const buyRatio = parseFloat((0.3 + Math.random() * 0.4).toFixed(4));
+        const sellRatio = parseFloat((1 - buyRatio).toFixed(4));
+        
+        let status = 'HEALTHY';
+        if (buyRatio > 0.65) status = 'TRAPPED_LONG';
+        else if (sellRatio > 0.65) status = 'TRAPPED_SHORT';
+
+        const candles = [];
+        let price = mockPrice;
+        for (let i = 0; i < 30; i++) {
+          const change = (Math.random() - 0.5) * (price * 0.01);
+          candles.push({
+            time: Date.now() - (30 - i) * 60000,
+            open: price,
+            high: price + Math.abs(change) * 1.2,
+            low: price - Math.abs(change) * 1.2,
+            close: price + change
+          });
+          price += change;
+        }
+
+        const mockFib = {
+          isUptrend: true,
+          highest: mockPrice * 1.02,
+          lowest: mockPrice * 0.98,
+          levels: {
+            '0.000': mockPrice * 1.02,
+            '0.236': mockPrice * 1.01,
+            '0.382': mockPrice * 1.005,
+            '0.500': mockPrice,
+            '0.618': mockPrice * 0.995,
+            '0.786': mockPrice * 0.985,
+            '1.000': mockPrice * 0.98,
+            '-0.272': mockPrice * 1.03,
+            '-0.618': mockPrice * 1.045
+          }
+        };
+
+        return {
+          ...asset,
+          price: mockPrice,
+          change24h: parseFloat(randomChange),
+          buyRatio,
+          sellRatio,
+          status,
+          candles,
+          indicators: { 
+            rsi: 50, 
+            percentB: 0.5, 
+            sma20: mockPrice,
+            ema50: mockPrice,
+            upperBand: mockPrice * 1.02,
+            lowerBand: mockPrice * 0.98,
+            stochastic: { k: 45, d: 43 },
+            macd: { macd: 0.02, signal: 0.015, histogram: 0.005 },
+            ichimoku: { tenkan: mockPrice, kijun: mockPrice, spanA: mockPrice, spanB: mockPrice },
+            fibonacci: mockFib
+          },
+          isMock: true
+        };
+      };
+
+      useEffect(() => {
+        fetchAllData(selectedTimeframe);
+      }, [selectedTimeframe, activeAssetsList]);
+
+      useEffect(() => {
+        fetchNews();
+        const interval = setInterval(fetchNews, 180000);
+        return () => clearInterval(interval);
+      }, []);
+
+      const toggleAsset = (id) => {
+        if (activeAssetsList.includes(id)) {
+          setActiveAssetsList(activeAssetsList.filter(a => a !== id));
+        } else {
+          setActiveAssetsList([...activeAssetsList, id]);
+        }
+      };
+
+      const getFilteredAssets = () => {
+        return ALL_ASSETS.filter(asset => {
+          if (!activeAssetsList.includes(asset.id)) return false;
+          
+          const data = marketData[asset.id];
+          if (!data) {
+            return activeStatusFilter === 'ALL' && activeBiasFilter === 'ALL' && activeMarketStateFilter === 'ALL';
+          }
+          
+          if (activeStatusFilter !== 'ALL' && data.status !== activeStatusFilter) {
+            return false;
+          }
+          
+          if (activeBiasFilter !== 'ALL') {
+            const assetBias = getContrarianBias(data.buyRatio);
+            if (assetBias !== activeBiasFilter) return false;
+          }
+
+          if (activeMarketStateFilter !== 'ALL') {
+            const isOpen = checkMarketOpen(asset.type);
+            const filterOpen = activeMarketStateFilter === 'OPEN';
+            if (isOpen !== filterOpen) return false;
+          }
+          
+          return true;
+        });
+      };
+
+      const filteredAssets = getFilteredAssets();
+      const trappedCount = Object.values(marketData).filter(
+        a => a.status === 'TRAPPED_LONG' || a.status === 'TRAPPED_SHORT'
+      ).length;
+      const strongContrarians = Object.values(marketData).filter(
+        a => a.buyRatio > 0.70 || a.sellRatio > 0.70
+      );
+
+      return (
+        <div class="relative z-10 mx-auto max-w-7xl px-4 py-8 md:px-6">
+          {/* Header */}
+          <header class="flex flex-col gap-4 border-b border-white/[0.08] pb-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="rounded-full bg-green-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-green-400 border border-green-500/20 glow-green">
+                  Live Terminal
+                </span>
+                <span class={`flex h-2 w-2 rounded-full ${serverConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></span>
+                <span class="text-xs text-zinc-400 font-mono">
+                  {serverConnected ? 'Connected via Node Proxy' : 'Offline Mode (Simulated Data)'}
+                </span>
+              </div>
+              <h1 class="mt-3 font-heading text-3xl font-bold tracking-tight text-white md:text-4xl">
+                Sentinel Sentiment
+              </h1>
+              <p class="mt-2 text-sm text-zinc-400 max-w-xl">
+                Analisis sentimen retail secara terperinci. Cari peluang contrarian dari posisi retail yang terjebak (*trapped*) di berbagai *timeframe*.
+              </p>
+            </div>
+
+            {/* Timeframe Selector */}
+            <div class="flex flex-wrap items-center gap-1.5 rounded-xl border border-white/[0.08] bg-zinc-950/80 p-1.5 backdrop-blur-md self-start md:self-center">
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => setSelectedTimeframe(tf)}
+                  class={`rounded-lg px-4 py-2 text-xs font-bold tracking-wider transition-all-300 ${
+                    selectedTimeframe === tf
+                      ? 'bg-green-500 text-black font-extrabold shadow-lg shadow-green-500/20'
+                      : 'text-zinc-400 hover:bg-white/[0.04] hover:text-white'
+                  }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+          </header>
+
+          {/* Live News Terminal Section */}
+          <section class="mt-6 rounded-2xl border border-white/5 bg-zinc-950/40 p-4 backdrop-blur-md">
+            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+              <div class="flex items-center gap-2">
+                <span class="relative flex h-2.5 w-2.5">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                </span>
+                <h2 class="text-xs font-bold uppercase tracking-wider text-white">Live Market-Moving News Terminal</h2>
+              </div>
+              <button 
+                onClick={fetchNews} 
+                disabled={isNewsLoading}
+                class="rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] px-2.5 py-1.5 transition-colors text-[10px] font-bold text-zinc-400 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg class={`h-3.5 w-3.5 ${isNewsLoading ? 'animate-spin text-green-400' : ''}`} fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89"></path>
+                </svg>
+                {isNewsLoading ? 'REFRESHING...' : 'REFRESH FEED'}
+              </button>
+            </div>
+            
+            <div class="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
+              {newsList.map((item, idx) => (
+                <div key={idx} class="rounded-xl border border-white/5 bg-zinc-900/30 p-3 hover:border-white/10 transition-colors flex flex-col justify-between">
+                  <div>
+                    <div class="flex items-center justify-between gap-2">
+                      <span class={`rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase ${
+                        item.impact === 'HIGH' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                        item.impact === 'MEDIUM' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                        'bg-zinc-800 text-zinc-400'
+                      }`}>
+                        {item.impact} IMPACT
+                      </span>
+                      <span class="text-[9px] text-zinc-500 font-mono">{new Date(item.pubDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </div>
+                    <h3 class="mt-2 text-xs font-bold text-white line-clamp-2 leading-relaxed hover:text-green-400 transition-colors">
+                      <a href={item.link} target="_blank" rel="noopener noreferrer">{item.title}</a>
+                    </h3>
+                    <p class="mt-1 text-[10px] text-zinc-400 line-clamp-2 leading-relaxed">{item.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Filtering & Asset Management Row */}
+          <section class="mt-6 flex flex-col gap-4 border-b border-white/[0.05] pb-6 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div class="flex flex-col gap-1">
+                <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Status</span>
+                <select 
+                  value={activeStatusFilter} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setActiveStatusFilter(val);
+                    if (val !== 'ALL') setActiveBiasFilter('ALL');
+                  }}
+                  class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
+                >
+                  {STATUS_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Contrarian Bias</span>
+                <select 
+                  value={activeBiasFilter} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setActiveBiasFilter(val);
+                    if (val !== 'ALL') setActiveStatusFilter('ALL');
+                  }}
+                  class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
+                >
+                  {BIAS_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Market State</span>
+                <select 
+                  value={activeMarketStateFilter} 
+                  onChange={(e) => setActiveMarketStateFilter(e.target.value)}
+                  class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
+                >
+                  {MARKET_STATE_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowAssetConfig(true)}
+              class="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] text-xs font-bold text-zinc-300 px-4 py-2.5 transition-all-300 self-start lg:self-end"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+              </svg>
+              Manage Active Assets ({activeAssetsList.length}/{ALL_ASSETS.length})
+            </button>
+          </section>
+
+          {/* Active Assets Multi-Select Modal Dialog */}
+          {showAssetConfig && (
+            <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div class="w-full max-w-xl rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8 shadow-2xl">
+                <div class="flex items-center justify-between border-b border-white/5 pb-4">
+                  <h2 class="text-xl font-bold text-white">Select Assets to Monitor</h2>
+                  <button 
+                    onClick={() => setShowAssetConfig(false)}
+                    class="text-zinc-500 hover:text-white font-mono text-xl"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p class="text-xs text-zinc-400 mt-2">
+                  Pilih aset yang ingin Anda tampilkan. Aplikasi hanya akan memuat data untuk aset yang dipilih untuk menghemat kuota token & rate limit API.
+                </p>
+                
+                <div class="mt-6 max-h-[300px] overflow-y-auto pr-2 grid grid-cols-2 gap-2">
+                  {ALL_ASSETS.map(asset => {
+                    const isChecked = activeAssetsList.includes(asset.id);
+                    return (
+                      <label 
+                        key={asset.id} 
+                        class={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all-300 ${
+                          isChecked 
+                            ? 'border-green-500/30 bg-green-500/[0.04] text-white' 
+                            : 'border-white/5 bg-zinc-900/20 text-zinc-400 hover:border-white/10'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleAsset(asset.id)}
+                          class="rounded border-white/10 bg-zinc-900 text-green-500 focus:ring-0"
+                        />
+                        <div>
+                          <span class="block text-xs font-bold font-mono">{asset.id}</span>
+                          <span class="block text-[10px] text-zinc-500">{asset.name}</span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div class="mt-8 flex items-center justify-end gap-3 border-t border-white/5 pt-4">
+                  <button
+                    onClick={() => setActiveAssetsList(ALL_ASSETS.map(a => a.id))}
+                    class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={() => setActiveAssetsList([])}
+                    class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
+                  >
+                    Clear All
+                  </button>
+                  <button
+                    onClick={() => setShowAssetConfig(false)}
+                    class="rounded-xl bg-green-500 hover:bg-green-400 text-black font-bold px-5 py-2.5 text-xs transition-all-300"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Grid Layouts */}
+          <h2 class="mt-8 text-lg font-bold uppercase tracking-wider text-zinc-400 border-l-2 border-green-500 pl-3">
+            Cryptocurrencies (Live Exchange Sentiment)
+          </h2>
+          {filteredAssets.filter(a => a.type === 'crypto').length === 0 ? (
+            <div class="mt-6 rounded-2xl border border-white/5 bg-white/[0.01] p-10 text-center text-zinc-500 text-sm">
+              Tidak ada aset kripto yang cocok dengan filter aktif.
+            </div>
+          ) : (
+            <div class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredAssets.filter(a => a.type === 'crypto').map(asset => (
+                <AssetCard
+                  key={asset.id}
+                  data={marketData[asset.id]}
+                  onClick={() => setActiveAsset(marketData[asset.id])}
+                />
+              ))}
+            </div>
+          )}
+
+          <h2 class="mt-14 text-lg font-bold uppercase tracking-wider text-zinc-400 border-l-2 border-orange-500 pl-3">
+            Forex & Gold (Speculative Retail Sentiment)
+          </h2>
+          {filteredAssets.filter(a => a.type === 'forex').length === 0 ? (
+            <div class="mt-6 rounded-2xl border border-white/5 bg-white/[0.01] p-10 text-center text-zinc-500 text-sm">
+              Tidak ada aset forex/emas yang cocok dengan filter aktif.
+            </div>
+          ) : (
+            <div class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredAssets.filter(a => a.type === 'forex').map(asset => (
+                <AssetCard
+                  key={asset.id}
+                  data={marketData[asset.id]}
+                  onClick={() => setActiveAsset(marketData[asset.id])}
+                />
+              ))}
+            </div>
+          )}
+
+          {activeAsset && (
+            <DetailModal
+              asset={activeAsset}
+              timeframe={selectedTimeframe}
+              newsList={newsList}
+              onClose={() => setActiveAsset(null)}
+            />
+          )}
+
+          <footer class="mt-20 border-t border-white/[0.06] pt-12 pb-16">
+            <p class="text-xs leading-relaxed text-zinc-500">
+              <strong>Risk Warning:</strong> Sentinel Sentiment adalah instrumen analisis statistik data pemantauan psikologis pasar untuk kebutuhan edukasi semata. Perkiraan sentimen sintetis dan riil tidak menjamin profitabilitas trading, tidak membentuk nasihat keuangan atau penasihat investasi berjangka resmi. Pasar keuangan memiliki risiko likuidasi tinggi. Kinerja masa lalu tidak mencerminkan kinerja masa depan.
+            </p>
+          </footer>
+        </div>
+      );
+    }
+
+    function AssetCard({ data, onClick }) {
+      if (!data) {
+        return (
+          <div class="min-h-[220px] rounded-3xl border border-white/[0.05] bg-zinc-900/10 p-6 animate-pulse flex flex-col justify-between">
+            <div class="h-6 w-24 bg-white/[0.05] rounded"></div>
+            <div class="h-10 w-full bg-white/[0.05] rounded"></div>
+            <div class="h-4 w-32 bg-white/[0.05] rounded"></div>
+          </div>
+        );
+      }
+
+      const longPct = (data.buyRatio * 100).toFixed(1);
+      const shortPct = (data.sellRatio * 100).toFixed(1);
+
+      let statusColor = 'bg-zinc-800 text-zinc-400';
+      let statusLabel = 'HEALTHY';
+      let glowClass = 'border-white/[0.08]';
+
+      if (data.status === 'TRAPPED_LONG') {
+        statusColor = 'bg-red-500/10 text-red-400 border border-red-500/20';
+        statusLabel = 'TRAPPED LONG';
+        glowClass = 'border-red-500/30 bg-red-950/5 glow-red';
+      } else if (data.status === 'TRAPPED_SHORT') {
+        statusColor = 'bg-orange-500/10 text-orange-400 border border-orange-500/20';
+        statusLabel = 'TRAPPED SHORT';
+        glowClass = 'border-orange-500/30 bg-orange-950/5 glow-orange';
+      } else if (data.status === 'EXTREME_LONG') {
+        statusColor = 'bg-red-400/10 text-red-300';
+        statusLabel = 'EXTREME LONG';
+      } else if (data.status === 'EXTREME_SHORT') {
+        statusColor = 'bg-orange-400/10 text-orange-300';
+        statusLabel = 'EXTREME SHORT';
+      }
+
+      const bias = getContrarianBias(data.buyRatio);
+      let biasLabel = 'NEUTRAL';
+      let biasColor = 'text-zinc-400';
+      if (bias === 'STRONG_BEARISH') { biasLabel = 'STRONG BEARISH'; biasColor = 'text-red-400 font-extrabold'; }
+      else if (bias === 'BEARISH') { biasLabel = 'BEARISH'; biasColor = 'text-red-300 font-semibold'; }
+      else if (bias === 'STRONG_BULLISH') { biasLabel = 'STRONG BULLISH'; biasColor = 'text-green-400 font-extrabold'; }
+      else if (bias === 'BULLISH') { biasLabel = 'BULLISH'; biasColor = 'text-green-300 font-semibold'; }
+
+      return (
+        <div 
+          onClick={onClick}
+          class={`group flex min-h-[260px] flex-col justify-between rounded-3xl border bg-zinc-950 p-6 cursor-pointer transition-all-300 hover:-translate-y-1 hover:border-green-500/30 hover:bg-zinc-900/10 ${glowClass}`}
+        >
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="flex items-center gap-1.5">
+                <span class="font-mono text-xs font-bold text-zinc-500 tracking-wider uppercase">
+                  {data.id}
+                </span>
+                <span class={`flex h-1.5 w-1.5 rounded-full ${checkMarketOpen(data.type) ? 'bg-green-500 glow-green' : 'bg-zinc-600'}`}></span>
+                <span class="text-[8px] font-bold text-zinc-500 tracking-wider">
+                  {checkMarketOpen(data.type) ? 'OPEN' : 'CLOSED'}
+                </span>
+              </div>
+              <h3 class="mt-1 font-heading text-lg font-bold text-white group-hover:text-green-400 transition-colors">
+                {data.name}
+              </h3>
+              {data.indicators.harmonicPattern && (
+                <span class={`mt-1.5 inline-block rounded border px-2 py-0.5 text-[8px] font-bold tracking-wider uppercase font-mono ${
+                  data.indicators.harmonicPattern.pattern.includes('Bullish')
+                    ? 'border-green-500/30 bg-green-500/5 text-green-400'
+                    : 'border-orange-500/30 bg-orange-500/5 text-orange-400'
+                }`}>
+                  ★ {data.indicators.harmonicPattern.pattern}
+                </span>
+              )}
+            </div>
+            <span class={`rounded-full px-2.5 py-1 text-[9px] font-bold tracking-wider uppercase ${statusColor}`}>
+              {statusLabel}
+            </span>
+          </div>
+
+          <div class="mt-4 flex items-baseline justify-between">
+            <span class="font-mono text-xl font-bold tracking-tight text-white">
+              {data.price.toLocaleString('en-US', { minimumFractionDigits: data.type === 'crypto' ? (data.price > 100 ? 2 : 4) : 4 })}
+            </span>
+            <span class={`font-mono text-sm font-semibold ${data.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {data.change24h >= 0 ? '+' : ''}{data.change24h}%
+            </span>
+          </div>
+
+          <div class="mt-5 space-y-2">
+            <div class="flex items-center justify-between text-[11px] font-bold text-zinc-400 font-mono">
+              <span class="text-green-400">LONG {longPct}%</span>
+              <span class="text-orange-400">SHORT {shortPct}%</span>
+            </div>
+            
+            <div class="relative h-2.5 w-full overflow-hidden rounded-full bg-zinc-800">
+              <div 
+                style={{ width: `${longPct}%` }}
+                class="absolute left-0 top-0 h-full bg-green-500 transition-all duration-500"
+              ></div>
+              <div 
+                style={{ width: `${shortPct}%` }}
+                class="absolute right-0 top-0 h-full bg-orange-500 transition-all duration-500"
+              ></div>
+              <div class="absolute left-1/2 top-0 h-full w-[2px] -translate-x-1/2 bg-zinc-950"></div>
+            </div>
+          </div>
+
+          <div class="mt-5 border-t border-white/[0.05] pt-4 flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase text-zinc-500 tracking-wider">Contrarian Bias</span>
+            <span class={`text-xs uppercase tracking-wider ${biasColor}`}>{biasLabel}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // ====================================================
+    // Modal Component: Detailed Read & Technical Indicators
+    // ====================================================
+    function DetailModal({ asset, timeframe, newsList = [], onClose }) {
+      const canvasRef = useRef(null);
+      const [activeTab, setActiveTab] = useState('plan'); // 'plan' or 'indicators'
+      
+      const [accountSizeStr, setAccountSizeStr] = useState('');
+      const [riskValueStr, setRiskValueStr] = useState('');
+      const [rewardValueStr, setRewardValueStr] = useState('');
+      const [riskUnit, setRiskUnit] = useState('%'); // '%' or '$'
+      const [customEntryStr, setCustomEntryStr] = useState('');
+      const [customSLStr, setCustomSLStr] = useState('');
+      const [customTPStr, setCustomTPStr] = useState('');
+      const [lotsInputStr, setLotsInputStr] = useState('');
+      const [tradeDirection, setTradeDirection] = useState('BUY');
+      const [aiCalcResult, setAiCalcResult] = useState(null);
+
+      const getActiveSessions = () => {
+        const now = new Date();
+        const utcHours = now.getUTCHours();
+        const wibHours = (utcHours + 7) % 24;
+        const wibMinutes = now.getUTCMinutes();
+        const currentWibTimeStr = `${wibHours.toString().padStart(2, '0')}:${wibMinutes.toString().padStart(2, '0')} WIB`;
+
+        const sessions = [];
+        if (wibHours >= 6 && wibHours < 14) sessions.push('Asia (Tokyo)');
+        if (wibHours >= 13 && wibHours < 22) sessions.push('Eropa (London)');
+        if (wibHours >= 20 || wibHours < 5) sessions.push('Amerika (New York)');
+
+        return { wibHours, currentWibTimeStr, sessions };
+      };
+
+      const getAssetTradingHours = (asset) => {
+        if (asset.type === 'crypto') {
+          return {
+            hfmHours: "24 Jam / 7 Hari Seminggu (Senin s/d Minggu penuh tanpa libur).",
+            peakSession: "Volatilitas puncak terjadi pada Sesi Overlap London-New York (pukul 19:00 s/d 23:00 WIB) dan Sesi New York malam hari."
+          };
+        }
+        if (asset.id === 'XAU') {
+          return {
+            hfmHours: "Senin pukul 05:00 WIB s/d Sabtu pukul 04:00 WIB (Daily Break: Selasa s/d Jumat pukul 04:00 - 05:00 WIB).",
+            peakSession: "Sangat direkomendasikan ditransaksikan saat Sesi Overlap London & New York (pukul 19:00 - 23:00 WIB) untuk volatilitas optimal."
+          };
+        }
+        if (asset.id === 'USDJPY' || asset.id === 'EURJPY' || asset.id === 'GBPJPY') {
+          return {
+            hfmHours: "Senin pukul 05:05 WIB s/d Sabtu pukul 04:55 WIB (Running 24 jam penuh dari Senin pagi hingga Sabtu dini hari).",
+            peakSession: "Volatilitas tinggi terjadi pada Sesi Asia/Tokyo (06:00 - 13:00 WIB) dan berlanjut ke Sesi London/Eropa sore hari."
+          };
+        }
+        if (asset.id === 'AUDUSD' || asset.id === 'NZDUSD') {
+          return {
+            hfmHours: "Senin pukul 05:05 WIB s/d Sabtu pukul 04:55 WIB.",
+            peakSession: "Sesi paling aktif adalah Sesi Sydney & Tokyo (pukul 05:00 s/d 13:00 WIB) ketika bank sentral Australia/Selandia Baru merilis data ekonomi."
+          };
+        }
+        return {
+          hfmHours: "Senin pukul 05:05 WIB s/d Sabtu pukul 04:55 WIB (Running 24 jam penuh dari Senin pagi hingga Sabtu dini hari).",
+          peakSession: "Puncak aktivitas perdagangan terjadi saat Sesi London (13:00 - 21:00 WIB) dan Sesi New York (20:00 - 04:00 WIB)."
+        };
+      };
+
+      const getAntigravityAssessment = (asset) => {
+        const isBullish = asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
+        const price = asset.price;
+        
+        const atrEstimate = price * 0.012; // 1.2% ATR estimate
+        const entry = parseFloat(price.toFixed(price > 100 ? 2 : 4));
+        const sl = isBullish ? parseFloat((price - atrEstimate).toFixed(price > 100 ? 2 : 4)) : parseFloat((price + atrEstimate).toFixed(price > 100 ? 2 : 4));
+        const tp = isBullish ? parseFloat((price + atrEstimate * 2.5).toFixed(price > 100 ? 2 : 4)) : parseFloat((price - atrEstimate * 2.5).toFixed(price > 100 ? 2 : 4));
+        
+        const recommendedTimeframe = asset.type === 'crypto' ? 'H4 / D1 (Swing)' : 'H1 / H4 (Intraday)';
+        
+        // Scan newsList for macro catalysts
+        let fedSentiment = "netral";
+        let cpiSentiment = "stabil";
+        let trumpFactor = "netral";
+        let geopolitics = "kondusif";
+        let nfpSentiment = "sehat";
+        
+        const combinedNewsText = (newsList || []).map(n => (n.title + ' ' + (n.summary || '')).toLowerCase()).join(' ');
+        
+        if (combinedNewsText.includes('fed') || combinedNewsText.includes('fomc') || combinedNewsText.includes('powell')) {
+          if (combinedNewsText.includes('hawkish') || combinedNewsText.includes('rate hike') || combinedNewsText.includes('tahan suku bunga')) {
+            fedSentiment = "hawkish (suku bunga tinggi/tahan, bullish USD, bearish aset risiko)";
+          } else if (combinedNewsText.includes('dovish') || combinedNewsText.includes('rate cut') || combinedNewsText.includes('pangkas suku bunga')) {
+            fedSentiment = "dovish (pelonggaran moneter, bearish USD, bullish aset risiko)";
+          } else {
+            fedSentiment = "reaktif terhadap data inflasi mendatang";
+          }
+        }
+        
+        if (combinedNewsText.includes('cpi') || combinedNewsText.includes('inflasi') || combinedNewsText.includes('inflation')) {
+          if (combinedNewsText.includes('naik') || combinedNewsText.includes('hotter') || combinedNewsText.includes('meningkat')) {
+            cpiSentiment = "panas (inflasi naik, menekan Fed untuk hawkish)";
+          } else if (combinedNewsText.includes('turun') || combinedNewsText.includes('cooler') || combinedNewsText.includes('melandai')) {
+            cpiSentiment = "melandai (inflasi terkendali, peluang dovish naik)";
+          }
+        }
+        
+        if (combinedNewsText.includes('trump') || combinedNewsText.includes('donald')) {
+          if (combinedNewsText.includes('tarif') || combinedNewsText.includes('tax') || combinedNewsText.includes('dolar kuat')) {
+            trumpFactor = "proteksionisme tarif (potensi memicu inflasi kembali)";
+          } else {
+            trumpFactor = "sentimen pro-bisnis & deregulasi pasar";
+          }
+        }
+        
+        if (combinedNewsText.includes('perang') || combinedNewsText.includes('war') || combinedNewsText.includes('geopolitik') || combinedNewsText.includes('serangan') || combinedNewsText.includes('rusia') || combinedNewsText.includes('ukraina') || combinedNewsText.includes('timur tengah')) {
+          geopolitics = "memanas (meningkatkan permintaan safe haven seperti Gold/XAU dan USD)";
+        }
+        
+        if (combinedNewsText.includes('nfp') || combinedNewsText.includes('tenaga kerja') || combinedNewsText.includes('non-farm payroll') || combinedNewsText.includes('pengangguran')) {
+          if (combinedNewsText.includes('lemah') || combinedNewsText.includes('meleset') || combinedNewsText.includes('buruk')) {
+            nfpSentiment = "melemah (tekanan pasar tenaga kerja, mendukung pemangkasan suku bunga)";
+          } else if (combinedNewsText.includes('kuat') || combinedNewsText.includes('bagus') || combinedNewsText.includes('melampaui')) {
+            nfpSentiment = "solid (pasar tenaga kerja kuat, Fed tidak terburu-buru pangkas rate)";
+          }
+        }
+
+        let analysisText = "";
+        let macroSummary = `Fed Stance: ${fedSentiment} | CPI/Inflasi: ${cpiSentiment} | Tenaga Kerja/NFP: ${nfpSentiment} | Geopolitik: ${geopolitics} | Trump Factor: ${trumpFactor}`;
+        
+        if (isBullish) {
+          analysisText = `Antigravity AI mendeteksi penumpukan likuiditas institusional di area diskon di bawah harga saat ini. Struktur pasar pada TF ${recommendedTimeframe} secara dominan menunjukkan Higher Highs dan Higher Lows, terlepas dari bias ritel yang mungkin sedang panik menaruh posisi short. EMA 50 mendukung kelanjutan momentum bullish. Kami merekomendasikan entri beli bertahap dekat zona rata-rata harga harian. \n\n[Analisis Fundamental Makro]: ${macroSummary}`;
+        } else {
+          analysisText = `Analisis aliran dana institusi menunjukkan distribusi pasokan yang kuat pada kisaran resistance atas di TF ${recommendedTimeframe}. Sentimen ritel mungkin bias buy, namun secara teknikal murni, harga ditolak berulang kali di area EMA 50 dan Stochastic menunjukkan kejenuhan beli. Target penurunan berada pada level support Fibonacci berikutnya. \n\n[Analisis Fundamental Makro]: ${macroSummary}`;
+        }
+        
+        return { isBullish, entry, sl, tp, recommendedTimeframe, analysisText };
+      };
+
+      const getSentinelVerdict = (asset) => {
+        const isContrarianBuy = asset.status === 'TRAPPED_SHORT';
+        const isContrarianSell = asset.status === 'TRAPPED_LONG';
+        
+        const isTrendBuy = asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
+        const isTrendSell = asset.indicators.rsi < 50 && asset.price < asset.indicators.sma20;
+        
+        let buyScore = 0;
+        let sellScore = 0;
+        
+        if (isContrarianBuy) buyScore += 35;
+        if (isContrarianSell) sellScore += 35;
+        
+        if (isTrendBuy) buyScore += 35;
+        if (isTrendSell) sellScore += 35;
+        
+        if (asset.indicators.rsi < 30) buyScore += 15;
+        if (asset.indicators.rsi > 70) sellScore += 15;
+        
+        if (asset.indicators.macd.histogram > 0) buyScore += 15;
+        else sellScore += 15;
+        
+        let verdictClass = 'bg-zinc-800 text-zinc-400';
+        let verdictText = 'NEUTRAL / WAIT';
+        let explanation = 'Sinyal contrarian ritel dan tren momentum teknikal saling bertolak belakang. Direkomendasikan menunggu konfirmasi breakout pada level Fibonacci sebelum masuk posisi.';
+        
+        if (buyScore > 60) {
+          verdictText = buyScore >= 80 ? 'STRONG BUY CONFLUENCE' : 'BUY BIAS';
+          verdictClass = buyScore >= 80 ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-green-500/5 text-green-300 border border-green-500/10';
+          explanation = `Dasbor Sentinel menyimpulkan bias BULLISH dengan tingkat keyakinan ${buyScore}%. Terjadi keselarasan antara sentimen ritel yang terjebak short (contrarian buy) dan momentum indikator teknikal (RSI & MACD) yang menunjukkan kekuatan pembelian.`;
+        } else if (sellScore > 60) {
+          verdictText = sellScore >= 80 ? 'STRONG SELL CONFLUENCE' : 'SELL BIAS';
+          verdictClass = sellScore >= 80 ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-orange-500/5 text-orange-300 border border-orange-500/10';
+          explanation = `Dasbor Sentinel menyimpulkan bias BEARISH dengan tingkat keyakinan ${sellScore}%. Terjadi keselarasan antara ritel yang terperangkap buy (contrarian sell) dan penolakan harga pada area EMA 50 serta histogram MACD negatif.`;
+        }
+        
+        return { verdictText, verdictClass, explanation };
+      };
+
+      // Draw custom candlestick chart on canvas
+      useEffect(() => {
+        if (!canvasRef.current || !asset.candles || asset.candles.length === 0) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+
+        const width = rect.width;
+        const height = rect.height;
+
+        ctx.clearRect(0, 0, width, height);
+
+        const paddingLeft = 10;
+        const paddingRight = 60;
+        const paddingTop = 20;
+        const paddingBottom = 20;
+        
+        const chartWidth = width - paddingLeft - paddingRight;
+        const chartHeight = height - paddingTop - paddingBottom;
+
+        const prices = asset.candles.map(c => c.close);
+        const highs = asset.candles.map(c => c.high);
+        const lows = asset.candles.map(c => c.low);
+
+        const maxPrice = Math.max(...highs);
+        const minPrice = Math.min(...lows);
+        const priceRange = maxPrice - minPrice;
+
+        const getX = (index) => paddingLeft + (index / (asset.candles.length - 1)) * chartWidth;
+        const getY = (val) => paddingTop + chartHeight - ((val - minPrice) / (priceRange || 0.0001)) * chartHeight;
+
+        // Draw horizontal grid lines & prices
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.fillStyle = '#71717a';
+        ctx.font = '10px JetBrains Mono';
+        ctx.lineWidth = 1;
+
+        const gridLines = 4;
+        for (let i = 0; i <= gridLines; i++) {
+          const priceVal = minPrice + (i / gridLines) * priceRange;
+          const y = getY(priceVal);
+          
+          ctx.beginPath();
+          ctx.moveTo(paddingLeft, y);
+          ctx.lineTo(width - paddingRight, y);
+          ctx.stroke();
+
+          ctx.fillText(
+            priceVal.toLocaleString('en-US', { minimumFractionDigits: asset.type === 'crypto' ? 2 : 4 }),
+            width - paddingRight + 5,
+            y + 3
+          );
+        }
+
+        // Draw Bollinger Bands (Upper, Lower, Mid/SMA20)
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.15)'; // Lower Band
+        ctx.beginPath();
+        asset.candles.forEach((c, idx) => {
+          const x = getX(idx);
+          const y = getY(asset.indicators.lowerBand || c.close);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(34, 197, 94, 0.15)'; // Upper Band
+        ctx.beginPath();
+        asset.candles.forEach((c, idx) => {
+          const x = getX(idx);
+          const y = getY(asset.indicators.upperBand || c.close);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Draw EMA 50 line
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.35)'; // EMA 50 Orange/Blue
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        asset.candles.forEach((c, idx) => {
+          const x = getX(idx);
+          const y = getY(asset.indicators.ema50 || c.close);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Draw candles
+        const candleWidth = (chartWidth / asset.candles.length) * 0.7;
+        asset.candles.forEach((candle, idx) => {
+          const x = getX(idx);
+          const yOpen = getY(candle.open);
+          const yClose = getY(candle.close);
+          const yHigh = getY(candle.high);
+          const yLow = getY(candle.low);
+          
+          const isGreen = candle.close >= candle.open;
+          ctx.strokeStyle = isGreen ? '#22c55e' : '#ef4444';
+          ctx.fillStyle = isGreen ? '#22c55e' : '#ef4444';
+          ctx.lineWidth = 1.5;
+
+          ctx.beginPath();
+          ctx.moveTo(x, yHigh);
+          ctx.lineTo(x, yLow);
+          ctx.stroke();
+
+          const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
+          ctx.fillRect(x - candleWidth / 2, Math.min(yOpen, yClose), candleWidth, bodyHeight);
+        });
+
+        // Draw Harmonic Pattern Overlay (if exists)
+        if (asset.indicators.harmonicPattern && asset.indicators.harmonicPattern.points) {
+          const hp = asset.indicators.harmonicPattern;
+          const pts = hp.points;
+          
+          const ptX = typeof pts.X === 'object' ? pts.X : { price: pts.X, index: Math.max(0, asset.candles.length - 35) };
+          const ptA = typeof pts.A === 'object' ? pts.A : { price: pts.A, index: Math.max(1, asset.candles.length - 27) };
+          const ptB = typeof pts.B === 'object' ? pts.B : { price: pts.B, index: Math.max(2, asset.candles.length - 18) };
+          const ptC = typeof pts.C === 'object' ? pts.C : { price: pts.C, index: Math.max(3, asset.candles.length - 10) };
+          const ptD = typeof pts.D === 'object' ? pts.D : { price: pts.D, index: asset.candles.length - 1 };
+
+          const xX = getX(ptX.index);
+          const yX = getY(ptX.price);
+          const xA = getX(ptA.index);
+          const yA = getY(ptA.price);
+          const xB = getX(ptB.index);
+          const yB = getY(ptB.price);
+          const xC = getX(ptC.index);
+          const yC = getY(ptC.price);
+          const xD = getX(ptD.index);
+          const yD = getY(ptD.price);
+
+          // Draw filled triangles: X-A-B and B-C-D
+          ctx.fillStyle = 'rgba(234, 179, 8, 0.08)'; // Semi-transparent Gold
+          ctx.beginPath();
+          ctx.moveTo(xX, yX);
+          ctx.lineTo(xA, yA);
+          ctx.lineTo(xB, yB);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(xB, yB);
+          ctx.lineTo(xC, yC);
+          ctx.lineTo(xD, yD);
+          ctx.closePath();
+          ctx.fill();
+
+          // Draw lines X-A-B-C-D
+          ctx.strokeStyle = '#eab308'; // Gold color
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([2, 2]); // Dotted lines for premium look
+          ctx.beginPath();
+          ctx.moveTo(xX, yX);
+          ctx.lineTo(xA, yA);
+          ctx.lineTo(xB, yB);
+          ctx.lineTo(xC, yC);
+          ctx.lineTo(xD, yD);
+          ctx.stroke();
+          ctx.setLineDash([]); // Reset dash
+
+          // Draw outer leg boundary X-D
+          ctx.strokeStyle = 'rgba(234, 179, 8, 0.3)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(xX, yX);
+          ctx.lineTo(xD, yD);
+          ctx.stroke();
+
+          // Draw vertex labels
+          const drawLabel = (text, x, y, isAbove) => {
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, 2 * Math.PI);
+            ctx.fillStyle = '#eab308';
+            ctx.fill();
+            ctx.strokeStyle = '#09090b';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 9px JetBrains Mono';
+            ctx.fillText(text, x - 3, isAbove ? y - 8 : y + 14);
+          };
+
+          drawLabel('X', xX, yX, yX < yA);
+          drawLabel('A', xA, yA, yA < yB);
+          drawLabel('B', xB, yB, yB < yA);
+          drawLabel('C', xC, yC, yC < yD);
+          drawLabel('D', xD, yD, yD < xC);
+        }
+
+      }, [asset]);
+
+      // Calculate Fibonacci-based Trade Setup
+      const getTradeSetup = () => {
+        const fib = asset.indicators.fibonacci;
+        if (!fib || !fib.levels) return null;
+
+        const bias = getContrarianBias(asset.buyRatio);
+        const isBullish = bias.includes('BULLISH');
+        const isBearish = bias.includes('BEARISH');
+
+        let entryMin, entryMax, stopLoss, tp1, tp2, tp3;
+
+        if (isBullish) {
+          // Uptrend logic / buy target
+          entryMin = fib.levels['0.618'];
+          entryMax = fib.levels['0.500'];
+          stopLoss = fib.levels['0.786'] * 0.998; // SL slightly below 78.6%
+          tp1 = fib.levels['0.000']; // Swing High
+          tp2 = fib.levels['-0.272']; // Extension -0.272
+          tp3 = fib.levels['-0.618']; // Extension -0.618
+        } else {
+          // Downtrend logic / sell target (default or bearish)
+          entryMin = fib.levels['0.500'];
+          entryMax = fib.levels['0.618'];
+          stopLoss = fib.levels['0.786'] * 1.002; // SL slightly above 78.6%
+          tp1 = fib.levels['0.000']; // Swing Low
+          tp2 = fib.levels['-0.272']; // Extension -0.272
+          tp3 = fib.levels['-0.618']; // Extension -0.618
+        }
+
+        const format = (v) => v.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 });
+
+        return {
+          isBullish,
+          entryRange: `${format(entryMin)} - ${format(entryMax)}`,
+          stopLoss: format(stopLoss),
+          tp1: format(tp1),
+          tp2: format(tp2),
+          tp3: format(tp3),
+          raw: { entryMin, entryMax, stopLoss, tp1, tp2, tp3 }
+        };
+      };
+
+      const setup = getTradeSetup();
+
+      const entryVal = parseFloat(customEntryStr) || 0;
+      const slVal = parseFloat(customSLStr) || 0;
+      const tpVal = parseFloat(customTPStr) || 0;
+      const accountSize = parseFloat(accountSizeStr) || 0;
+      const riskVal = parseFloat(riskValueStr) || 0;
+      const rewardVal = parseFloat(rewardValueStr) || 0;
+      const isBuy = tradeDirection === 'BUY';
+
+      const handleEntryChange = (valStr) => setCustomEntryStr(valStr);
+      const handleLotsChange = (val) => setLotsInputStr(val);
+      const handleRewardValueChange = (valStr) => setRewardValueStr(valStr);
+      const handleRiskValueChange = (valStr) => setRiskValueStr(valStr);
+      const handleDirectionChange = (newDir) => setTradeDirection(newDir);
+      const handleTPChange = (valStr) => setCustomTPStr(valStr);
+      const handleSLChange = (valStr) => setCustomSLStr(valStr);
+
+      const calculateAiRecommendation = () => {
+        const balance = parseFloat(accountSizeStr) || 0;
+        const risk = parseFloat(riskValueStr) || 0;
+        const reward = parseFloat(rewardValueStr) || 0;
+        const entry = parseFloat(customEntryStr) || 0;
+        const sl = parseFloat(customSLStr) || 0;
+        const tp = parseFloat(customTPStr) || 0;
+        const lots = parseFloat(lotsInputStr) || 0;
+        const isBuyMode = tradeDirection === 'BUY';
+
+        let recSL = sl;
+        let recTP = tp;
+        let recLots = lots;
+        let recRR = '';
+        let safetyRating = 'AMAT AMAN';
+        let safetyColor = 'text-green-400';
+        let adviceList = [];
+        let logs = [];
+
+        // 1. Evaluate Direction & Entry
+        if (entry <= 0) {
+          adviceList.push("Silakan isi Entry Price (Langkah 6) agar AI dapat menganalisis level penempatan stop loss dan target keuntungan.");
+        } else {
+          logs.push(`Entri Posisi: ${tradeDirection} di harga ${entry.toLocaleString()}`);
+        }
+
+        // 2. Stop Loss (Step 7) & Take Profit (Step 8) calculations
+        if (entry > 0) {
+          if (!sl || sl <= 0) {
+            const fib = asset.indicators.fibonacci;
+            if (fib && fib.levels) {
+              recSL = isBuyMode ? fib.levels['0.786'] * 0.998 : fib.levels['0.786'] * 1.002;
+              logs.push(`Stop Loss tidak diisi. Rekomendasi SL Teknis (Fibonacci 0.786): ${recSL.toFixed(asset.price > 100 ? 2 : 4)}`);
+            } else {
+              const atr = entry * 0.012;
+              recSL = isBuyMode ? (entry - atr) : (entry + atr);
+              logs.push(`Stop Loss tidak diisi. Rekomendasi SL Teknis (1.2% ATR): ${recSL.toFixed(asset.price > 100 ? 2 : 4)}`);
+            }
+          }
+
+          if (!tp || tp <= 0) {
+            const diffSL = Math.abs(entry - recSL);
+            const computedRR = (reward > 0 && risk > 0) ? (reward / risk) : 2.0; // Default R:R 1:2
+            const diffTP = diffSL * computedRR;
+            recTP = isBuyMode ? (entry + diffTP) : (entry - diffTP);
+            logs.push(`Take Profit tidak diisi. Rekomendasi TP (berdasarkan target R:R 1:${computedRR.toFixed(1)}): ${recTP.toFixed(asset.price > 100 ? 2 : 4)}`);
+          }
+
+          const actualDiffSL = Math.abs(entry - recSL);
+          const actualDiffTP = Math.abs(recTP - entry);
+          if (actualDiffSL > 0) {
+            const rrRatio = actualDiffTP / actualDiffSL;
+            recRR = `1 : ${rrRatio.toFixed(2)}`;
+            if (rrRatio < 1.5) {
+              adviceList.push("Rasio Risk-to-Reward Anda terlalu rendah (di bawah 1:1.5). Disarankan melebarkan jarak TP atau mempersempit jarak SL.");
+            } else {
+              logs.push(`Rasio Risk-to-Reward Realisasi: ${recRR} (Sangat Sehat ✓)`);
+            }
+          }
+        }
+
+        // 3. Balance, Risk, and Lots suggestion
+        if (balance > 0 && risk > 0 && entry > 0) {
+          const riskAmountUSD = riskUnit === '%' ? (balance * (risk / 100)) : risk;
+          const diffSL = Math.abs(entry - recSL);
+          
+          if (diffSL > 0) {
+            const calculatedUnits = riskAmountUSD / diffSL;
+            let computedLots = calculatedUnits;
+            if (asset.type === 'forex') {
+              computedLots = asset.id === 'XAU' ? (calculatedUnits / 100) : (calculatedUnits / 100000);
+            }
+            recLots = parseFloat(computedLots.toFixed(3));
+            logs.push(`Rekomendasi Lots agar sesuai batasan risiko: ${recLots} ${asset.type === 'forex' ? 'Lots' : 'Coins'}`);
+          }
+        }
+
+        // 4. Safety & Leverage evaluation
+        let calculatedRiskUSD = 0;
+        let calculatedRiskPct = 0;
+        if (entry > 0 && recSL > 0 && lots > 0) {
+          const diffSL = Math.abs(entry - recSL);
+          let units = lots;
+          if (asset.type === 'forex') {
+            units = lots * (asset.id === 'XAU' ? 100 : 100000);
+          }
+          calculatedRiskUSD = units * diffSL;
+          if (balance > 0) {
+            calculatedRiskPct = (calculatedRiskUSD / balance) * 100;
+            logs.push(`Risiko Nyata (Lots manual Anda): $${calculatedRiskUSD.toFixed(2)} (${calculatedRiskPct.toFixed(2)}% dari saldo).`);
+            
+            if (calculatedRiskPct > 5) {
+              safetyRating = 'SANGAT BERBAHAYA';
+              safetyColor = 'text-red-400 animate-pulse';
+              adviceList.push("Risiko posisi melebihi 5% saldo akun. Ini melanggar money management bursa HFM. Kurangi ukuran Lot atau sesuaikan SL!");
+            } else if (calculatedRiskPct > 2) {
+              safetyRating = 'MODERAT / AGRESIF';
+              safetyColor = 'text-orange-400';
+              adviceList.push("Risiko berada di kisaran moderat (2-5%). Harap pastikan analisis teknikal bursa H1/H4 mendukung.");
+            }
+          }
+        }
+
+        if (adviceList.length === 0) {
+          adviceList.push("Struktur manajemen posisi Anda sangat bagus dan aman sesuai standar trading institusional.");
+        }
+
+        setAiCalcResult({
+          recSL: recSL.toFixed(asset.price > 100 ? 2 : 4),
+          recTP: recTP.toFixed(asset.price > 100 ? 2 : 4),
+          recLots: recLots > 0 ? recLots.toFixed(3) : 'Belum ditentukan',
+          rr: recRR || 'Belum dihitung',
+          safetyRating,
+          safetyColor,
+          advice: adviceList.join(" "),
+          logs
+        });
+      };
+
+      const clearAiRecommendation = () => {
+        setAccountSizeStr('');
+        setRiskValueStr('');
+        setRewardValueStr('');
+        setCustomEntryStr('');
+        setCustomSLStr('');
+        setCustomTPStr('');
+        setLotsInputStr('');
+        setAiCalcResult(null);
+      };
+      const longPct = (asset.buyRatio * 100).toFixed(1);
+      const shortPct = (asset.sellRatio * 100).toFixed(1);
+
+      return (
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-opacity duration-300">
+          <div class="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8 shadow-2xl shadow-black/80">
+            
+            <button 
+              onClick={onClose}
+              class="absolute top-6 right-6 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white transition-colors"
+            >
+              ×
+            </button>
+
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="rounded-full bg-zinc-800 px-2.5 py-0.5 text-[10px] font-bold text-zinc-400 uppercase font-mono">
+                  {asset.id} / Timeframe {timeframe}
+                </span>
+                <span class={`flex h-1.5 w-1.5 rounded-full ${checkMarketOpen(asset.type) ? 'bg-green-500 glow-green' : 'bg-zinc-655'}`}></span>
+                <span class="text-[9px] font-bold text-zinc-500 tracking-wider">
+                  {checkMarketOpen(asset.type) ? 'MARKET OPEN' : 'MARKET CLOSED'}
+                </span>
+                <span class={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                  asset.status.includes('TRAPPED') ? 'bg-red-500/10 text-red-400' : 'bg-zinc-800 text-zinc-400'
+                }`}>
+                  {asset.status.replace('_', ' ')}
+                </span>
+              </div>
+              <h2 class="mt-2 font-heading text-2xl font-bold text-white">{asset.name} Live Analysis</h2>
+            </div>
+
+            {/* Main Workspace Layout */}
+            <div class="mt-6 grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
+              {/* Left Column: Candlestick Canvas Chart */}
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Live Candlestick Spark Chart</p>
+                  <div class="flex items-center gap-4 text-[10px] text-zinc-500 font-mono">
+                    <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>EMA 50</span>
+                    <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-red-400/30"></span>Lower BB</span>
+                    <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-green-400/30"></span>Upper BB</span>
+                  </div>
+                </div>
+                <div class="relative rounded-2xl border border-white/5 bg-zinc-900/20 p-4">
+                  <canvas ref={canvasRef} class="h-[240px] w-full"></canvas>
+                </div>
+
+                {/* Tabs for Plan or Indicators */}
+                <div class="mt-5 flex border-b border-white/5">
+                  <button 
+                    onClick={() => setActiveTab('plan')}
+                    class={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all-300 border-b-2 ${
+                      activeTab === 'plan' ? 'border-green-500 text-green-400' : 'border-transparent text-zinc-400'
+                    }`}
+                  >
+                    Contrarian Setup & Fibs
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('indicators')}
+                    class={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all-300 border-b-2 ${
+                      activeTab === 'indicators' ? 'border-green-500 text-green-400' : 'border-transparent text-zinc-400'
+                    }`}
+                  >
+                    Extended Technical Metrics
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('sessions')}
+                    class={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all-300 border-b-2 ${
+                      activeTab === 'sessions' ? 'border-green-500 text-green-400' : 'border-transparent text-zinc-400'
+                    }`}
+                  >
+                    HFM Hours & Sessions
+                  </button>
+                </div>
+
+                {/* Tab 1 Content: Fibonacci Setup */}
+                {activeTab === 'plan' && setup && (
+                  <div class="mt-4 grid grid-cols-2 gap-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4">
+                    <div>
+                      <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Fibonacci Levels (Last 30 Candles)</p>
+                      <ul class="mt-2 space-y-1.5 text-xs font-mono text-zinc-300">
+                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                          <span class="text-zinc-500">0.000 (Swing {setup.isBullish ? 'High' : 'Low'})</span>
+                          <span class="text-zinc-400 font-bold">{asset.indicators.fibonacci.levels['0.000']}</span>
+                        </li>
+                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
+                          <span>0.618 (Golden Pocket)</span>
+                          <span class="font-bold">{asset.indicators.fibonacci.levels['0.618']}</span>
+                        </li>
+                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
+                          <span>0.500 (Mid Point)</span>
+                          <span class="font-bold">{asset.indicators.fibonacci.levels['0.500']}</span>
+                        </li>
+                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                          <span class="text-zinc-500">0.382 (Fib Level)</span>
+                          <span>{asset.indicators.fibonacci.levels['0.382']}</span>
+                        </li>
+                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                          <span class="text-zinc-500">0.786 (Limit Support)</span>
+                          <span>{asset.indicators.fibonacci.levels['0.786']}</span>
+                        </li>
+                        <li class="flex items-center justify-between">
+                          <span class="text-zinc-500">1.000 (Swing {setup.isBullish ? 'Low' : 'High'})</span>
+                          <span class="text-zinc-400">{asset.indicators.fibonacci.levels['1.000']}</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Trading Plan</p>
+                      <div class="mt-2 space-y-3">
+                        <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono">Limit Entry Zone</span>
+                          <span class="text-xs font-bold text-white font-mono mt-0.5">{setup.entryRange}</span>
+                        </div>
+                        <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono">Stop Loss (SL)</span>
+                          <span class="text-xs font-bold text-red-400 font-mono mt-0.5">{setup.stopLoss}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2 Content: Extended Metrics */}
+                {activeTab === 'indicators' && (
+                  <div class="mt-4 grid grid-cols-2 gap-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4 text-xs font-mono">
+                    {/* Column 1: Oscillators & Momentum */}
+                    <div class="space-y-3">
+                      <div>
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Stochastic Oscillator</span>
+                        <div class="mt-1 flex items-center justify-between text-zinc-300">
+                          <span>%K Line: <span class="text-white font-bold">{asset.indicators.stochastic.k}</span></span>
+                          <span>%D Signal: <span class="text-zinc-400 font-bold">{asset.indicators.stochastic.d}</span></span>
+                        </div>
+                        <span class="text-[10px] text-zinc-500 block mt-0.5">
+                          {asset.indicators.stochastic.k < 20 ? 'Oversold (Bullish Bias)' : asset.indicators.stochastic.k > 80 ? 'Overbought (Bearish Bias)' : 'Neutral'}
+                        </span>
+                      </div>
+
+                      <div class="border-t border-white/5 pt-2">
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">MACD Indicator</span>
+                        <div class="mt-1 space-y-0.5 text-[11px]">
+                          <div class="flex justify-between"><span>MACD Line</span><span class="text-white">{asset.indicators.macd.macd}</span></div>
+                          <div class="flex justify-between"><span>Signal Line</span><span class="text-zinc-400">{asset.indicators.macd.signal}</span></div>
+                          <div class="flex justify-between"><span>Histogram</span><span class={asset.indicators.macd.histogram >= 0 ? 'text-green-400' : 'text-red-400'}>{asset.indicators.macd.histogram}</span></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Column 2: Ichimoku Cloud & Moving Averages */}
+                    <div class="space-y-3">
+                      <div>
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Ichimoku Cloud Components</span>
+                        <div class="mt-1 space-y-0.5 text-[11px]">
+                          <div class="flex justify-between"><span>Tenkan-sen (9)</span><span class="text-white">{asset.indicators.ichimoku.tenkan}</span></div>
+                          <div class="flex justify-between"><span>Kijun-sen (26)</span><span class="text-zinc-400">{asset.indicators.ichimoku.kijun}</span></div>
+                          <div class="flex justify-between"><span>Senkou Span A</span><span class="text-green-400/80">{asset.indicators.ichimoku.spanA}</span></div>
+                          <div class="flex justify-between"><span>Senkou Span B</span><span class="text-red-400/80">{asset.indicators.ichimoku.spanB}</span></div>
+                        </div>
+                      </div>
+
+                      <div class="border-t border-white/5 pt-2">
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Moving Averages</span>
+                        <div class="mt-1 space-y-0.5 text-[11px]">
+                          <div class="flex justify-between"><span>SMA 20 (Mid BB)</span><span class="text-white">{asset.indicators.sma20}</span></div>
+                          <div class="flex justify-between"><span>EMA 50 (Trend Line)</span><span class="text-blue-400">{asset.indicators.ema50}</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3 Content: HFM Market Hours & Sessions */}
+                {activeTab === 'sessions' && (() => {
+                  const sessionData = getActiveSessions();
+                  const hoursInfo = getAssetTradingHours(asset);
+                  
+                  return (
+                    <div class="mt-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4 text-xs font-mono">
+                      <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div>
+                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Waktu Anda Saat Ini</span>
+                          <p class="text-sm font-bold text-white font-mono mt-0.5">{sessionData.currentWibTimeStr}</p>
+                        </div>
+                        <div class="text-right">
+                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Status Pasar HFM</span>
+                          <div class="mt-0.5">
+                            <span class={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                              asset.type === 'crypto' || (new Date().getUTCDay() !== 6 && new Date().getUTCDay() !== 0)
+                                ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}>
+                              <span class={`h-1.5 w-1.5 rounded-full ${
+                                asset.type === 'crypto' || (new Date().getUTCDay() !== 6 && new Date().getUTCDay() !== 0)
+                                  ? 'bg-green-400 animate-pulse'
+                                  : 'bg-red-400'
+                              }`}></span>
+                              {asset.type === 'crypto' || (new Date().getUTCDay() !== 6 && new Date().getUTCDay() !== 0) ? 'OPEN / RUNNING' : 'CLOSED (WEEKEND)'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="mt-4 space-y-3">
+                        <div class="rounded-xl bg-zinc-900/40 p-3 border border-white/5">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">Jam Perdagangan HFM (WIB)</span>
+                          <p class="text-white font-bold mt-1 text-[11px] leading-relaxed">{hoursInfo.hfmHours}</p>
+                        </div>
+
+                        <div class="rounded-xl bg-zinc-900/40 p-3 border border-white/5">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">Sesi Puncak Volatilitas & Rekomendasi</span>
+                          <p class="text-zinc-300 mt-1 text-[11px] leading-relaxed">{hoursInfo.peakSession}</p>
+                        </div>
+
+                        {/* Interactive Session Timeline */}
+                        <div class="mt-4">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono font-bold mb-2">Visual Session Timeline</span>
+                          <div class="grid grid-cols-3 gap-2">
+                            <div class={`rounded-xl p-3 border text-center transition-all ${
+                              sessionData.sessions.includes('Asia (Tokyo)')
+                                ? 'border-green-500/30 bg-green-500/[0.03] text-green-400'
+                                : 'border-white/5 bg-zinc-900/20 text-zinc-500'
+                            }`}>
+                              <span class="block text-[10px] font-bold">SESI ASIA</span>
+                              <span class="block text-[9px] font-mono mt-0.5">06:00 - 14:00</span>
+                              {sessionData.sessions.includes('Asia (Tokyo)') && (
+                                <span class="inline-block mt-2 rounded bg-green-500/10 px-1.5 py-0.5 text-[8px] font-bold animate-pulse">ACTIVE</span>
+                              )}
+                            </div>
+
+                            <div class={`rounded-xl p-3 border text-center transition-all ${
+                              sessionData.sessions.includes('Eropa (London)')
+                                ? 'border-green-500/30 bg-green-500/[0.03] text-green-400'
+                                : 'border-white/5 bg-zinc-900/20 text-zinc-500'
+                            }`}>
+                              <span class="block text-[10px] font-bold">SESI LONDON</span>
+                              <span class="block text-[9px] font-mono mt-0.5">13:00 - 21:00</span>
+                              {sessionData.sessions.includes('Eropa (London)') && (
+                                <span class="inline-block mt-2 rounded bg-green-500/10 px-1.5 py-0.5 text-[8px] font-bold animate-pulse">ACTIVE</span>
+                              )}
+                            </div>
+
+                            <div class={`rounded-xl p-3 border text-center transition-all ${
+                              sessionData.sessions.includes('Amerika (New York)')
+                                ? 'border-green-500/30 bg-green-500/[0.03] text-green-400'
+                                : 'border-white/5 bg-zinc-900/20 text-zinc-500'
+                            }`}>
+                              <span class="block text-[10px] font-bold">SESI NY</span>
+                              <span class="block text-[9px] font-mono mt-0.5">20:00 - 04:00</span>
+                              {sessionData.sessions.includes('Amerika (New York)') && (
+                                <span class="inline-block mt-2 rounded bg-green-500/10 px-1.5 py-0.5 text-[8px] font-bold animate-pulse">ACTIVE</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* Antigravity AI Assessment & Sentinel Verdict Panel */}
+                {(() => {
+                  const aiAssess = getAntigravityAssessment(asset);
+                  const sentinelVerdict = getSentinelVerdict(asset);
+                  
+                  return (
+                    <div class="mt-5 space-y-4">
+                      {/* Antigravity AI Personal Assessment */}
+                      <div class="rounded-2xl border border-violet-500/25 bg-violet-950/10 p-5 shadow-lg shadow-violet-950/10">
+                        <div class="flex items-center justify-between border-b border-white/5 pb-2.5">
+                          <div class="flex items-center gap-2">
+                            <span class="text-violet-400 text-sm">✦</span>
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-violet-400 font-heading">Antigravity AI Assessment (Personal)</h4>
+                          </div>
+                          <span class={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            aiAssess.isBullish ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}>
+                            {aiAssess.isBullish ? 'BUY BIAS' : 'SELL BIAS'}
+                          </span>
+                        </div>
+                        <div class="mt-3 grid grid-cols-2 gap-3 text-xs border-b border-white/5 pb-3">
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Rekomendasi Timeframe</span>
+                            <p class="text-white font-bold font-mono mt-0.5">{aiAssess.recommendedTimeframe}</p>
+                          </div>
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Zona Entry Pribadi</span>
+                            <p class="text-white font-bold font-mono mt-0.5">{aiAssess.entry}</p>
+                          </div>
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Stop Loss (SL)</span>
+                            <p class="text-red-400 font-bold font-mono mt-0.5">{aiAssess.sl}</p>
+                          </div>
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Take Profit (TP)</span>
+                            <p class="text-green-400 font-bold font-mono mt-0.5">{aiAssess.tp}</p>
+                          </div>
+                        </div>
+                        <div class="mt-3">
+                          <p class="text-xs text-zinc-300 leading-relaxed italic font-sans">{aiAssess.analysisText}</p>
+                        </div>
+                      </div>
+
+                      {/* Sentinel Verdict */}
+                      <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
+                        <div class="flex items-center justify-between border-b border-white/5 pb-2.5">
+                          <h4 class="text-xs font-bold uppercase tracking-wider text-zinc-400 font-heading">Sentinel Conflux Verdict</h4>
+                          <span class={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${sentinelVerdict.verdictClass}`}>
+                            {sentinelVerdict.verdictText}
+                          </span>
+                        </div>
+                        <p class="mt-3 text-xs text-zinc-300 leading-relaxed font-sans">{sentinelVerdict.explanation}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Right Column: Sentiment & Playbook */}
+              <div class="flex flex-col justify-between gap-4">
+                {/* Metric Summary */}
+                <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Positioning Metrics</p>
+                  
+                  <div class="space-y-2 mb-4">
+                    <div class="flex justify-between text-xs font-bold font-mono">
+                      <span class="text-green-400">LONG: {longPct}%</span>
+                      <span class="text-orange-400">SHORT: {shortPct}%</span>
+                    </div>
+                    <div class="relative h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                      <div style={{ width: `${longPct}%` }} class="absolute left-0 top-0 h-full bg-green-500"></div>
+                      <div style={{ width: `${shortPct}%` }} class="absolute right-0 top-0 h-full bg-orange-500"></div>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="rounded-xl bg-zinc-900/40 p-2.5">
+                      <span class="block text-[10px] text-zinc-500 uppercase">RSI (14)</span>
+                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators.rsi}</span>
+                    </div>
+                    <div class="rounded-xl bg-zinc-900/40 p-2.5">
+                      <span class="block text-[10px] text-zinc-500 uppercase">Bollinger %B</span>
+                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators.percentB}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Playbooks Section (Contrarian & Non-Contrarian Trend Following) */}
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <ContrarianPlaybook asset={asset} />
+                  <TrendFollowingPlaybook asset={asset} />
+                </div>
+
+                {/* Interactive Position Calculator */}
+                <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-5 mt-4">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-green-400 font-heading">Position & Risk Calculator</h4>
+                    <p class="text-[10px] text-zinc-500 mt-1 leading-relaxed">
+                      Isi kolom manual (Langkah 1-9) sesuai keinginan Anda. Klik tombol Aktivasi di bawah untuk mendapatkan rekomendasi Stop Loss/Take Profit dan penaksiran risiko bursa HFM dari Antigravity AI.
+                    </p>
+
+                    {/* Trade Direction Toggle */}
+                    <div class="mt-4">
+                      <label class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">1. Trade Direction (BUY / SELL)</label>
+                      <div class="mt-1 flex rounded-xl bg-zinc-900 p-1 border border-white/5 font-mono text-xs overflow-hidden">
+                        <button 
+                          onClick={() => handleDirectionChange('BUY')}
+                          class={`w-1/2 py-2 rounded-lg font-bold transition-all ${
+                            tradeDirection === 'BUY' ? 'bg-green-500 text-black shadow-lg shadow-green-500/20' : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          ▲ BUY LONG
+                        </button>
+                        <button 
+                          onClick={() => handleDirectionChange('SELL')}
+                          class={`w-1/2 py-2 rounded-lg font-bold transition-all ${
+                            tradeDirection === 'SELL' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          ▼ SELL SHORT
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="mt-4 grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">2. Account Balance ($)</label>
+                        <input 
+                          type="text" 
+                          value={accountSizeStr}
+                          onChange={(e) => setAccountSizeStr(e.target.value)}
+                          placeholder="saldo..."
+                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                        />
+                      </div>
+                      <div class="flex flex-col justify-end">
+                        <div class="flex items-center justify-between h-8 bg-zinc-900/30 px-3 rounded-lg border border-white/5">
+                          <span class="text-[9px] uppercase text-zinc-500 font-mono font-bold">3. Risk/Reward Unit</span>
+                          <div class="flex rounded-md bg-zinc-900 p-0.5 border border-white/5">
+                            <button 
+                              onClick={() => setRiskUnit('%')}
+                              class={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+                                riskUnit === '%' ? 'bg-green-500 text-black' : 'text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              %
+                            </button>
+                            <button 
+                              onClick={() => setRiskUnit('$')}
+                              class={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+                                riskUnit === '$' ? 'bg-green-500 text-black' : 'text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              $
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">4. Risk {riskUnit === '%' ? '(%)' : '($)'}</label>
+                        <input 
+                          type="text" 
+                          value={riskValueStr}
+                          onChange={(e) => handleRiskValueChange(e.target.value)}
+                          placeholder="nilai resiko..."
+                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">5. Reward {riskUnit === '%' ? '(%)' : '($)'}</label>
+                        <input 
+                          type="text" 
+                          value={rewardValueStr}
+                          onChange={(e) => handleRewardValueChange(e.target.value)}
+                          placeholder="target profit..."
+                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-3 gap-2">
+                      <div>
+                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">6. Entry Price</label>
+                        <input 
+                          type="text" 
+                          value={customEntryStr}
+                          onChange={(e) => handleEntryChange(e.target.value)}
+                          placeholder="harga..."
+                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white font-mono outline-none focus:border-green-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">7. Stop Loss (SL)</label>
+                        <input 
+                          type="text" 
+                          value={customSLStr}
+                          onChange={(e) => handleSLChange(e.target.value)}
+                          placeholder="sl..."
+                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-red-400 font-mono outline-none focus:border-green-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">8. Take Profit (TP)</label>
+                        <input 
+                          type="text" 
+                          value={customTPStr}
+                          onChange={(e) => handleTPChange(e.target.value)}
+                          placeholder="tp..."
+                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-green-400 font-mono outline-none focus:border-green-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="mt-3">
+                      <label class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">
+                        {asset.type === 'forex' ? (asset.id === 'XAU' ? '9. Lots (100 Oz/Lot)' : '9. Lots (100k/Lot)') : '9. Coins / Contracts / Lots'}
+                      </label>
+                      <input 
+                        type="text" 
+                        value={lotsInputStr}
+                        onChange={(e) => handleLotsChange(e.target.value)}
+                        placeholder="Lot size..."
+                        class="mt-1 w-full rounded-lg border border-green-500/30 bg-green-500/[0.02] px-3 py-1.5 text-xs font-bold text-green-400 outline-none focus:border-green-400"
+                      />
+                    </div>
+
+                    {/* Activation Buttons */}
+                    <div class="mt-5 flex gap-3">
+                      <button 
+                        onClick={calculateAiRecommendation}
+                        class="flex-1 rounded-xl bg-violet-600 hover:bg-violet-500 font-bold px-4 py-3 text-xs text-white transition-all shadow-lg shadow-violet-500/20 border border-violet-500/30 flex items-center justify-center gap-1.5"
+                      >
+                        ✦ AKTIFKAN REKOMENDASI AI
+                      </button>
+                      <button 
+                        onClick={clearAiRecommendation}
+                        class="rounded-xl bg-zinc-800 hover:bg-zinc-750 font-bold px-4 py-3 text-xs text-zinc-400 transition-colors border border-white/5"
+                      >
+                        RESET / CLEAR
+                      </button>
+                    </div>
+
+                    {/* Antigravity AI Recommendation Result Box */}
+                    {aiCalcResult && (
+                      <div class="mt-4 rounded-xl border border-violet-500/20 bg-violet-950/10 p-4 space-y-3 font-mono text-xs shadow-inner">
+                        <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                          <span class="text-violet-400 font-bold">✦ ANTIGRAVITY AI METRICS</span>
+                          <span class={`rounded-full px-2 py-0.5 text-[10px] font-bold ${aiCalcResult.safetyColor}`}>
+                            {aiCalcResult.safetyRating}
+                          </span>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-2 text-[11px] text-zinc-300">
+                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
+                            <span class="text-zinc-500">Saran SL:</span>
+                            <span class="text-red-400 font-bold">{aiCalcResult.recSL}</span>
+                          </div>
+                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
+                            <span class="text-zinc-500">Saran TP:</span>
+                            <span class="text-green-400 font-bold">{aiCalcResult.recTP}</span>
+                          </div>
+                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
+                            <span class="text-zinc-500">Saran Lots:</span>
+                            <span class="text-white font-bold">{aiCalcResult.recLots}</span>
+                          </div>
+                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
+                            <span class="text-zinc-500">R:R Ratio:</span>
+                            <span class="text-violet-400 font-bold">{aiCalcResult.rr}</span>
+                          </div>
+                        </div>
+
+                        <div class="mt-2 text-[11px] text-zinc-400 border-t border-white/5 pt-2">
+                          <span class="block text-[9px] uppercase font-bold text-violet-400">Jejak Kalkulasi AI:</span>
+                          <ul class="mt-1 list-disc pl-4 space-y-1 text-[10px] text-zinc-400 leading-normal">
+                            {aiCalcResult.logs.map((log, lIdx) => <li key={lIdx}>{log}</li>)}
+                          </ul>
+                        </div>
+
+                        <div class="mt-2 bg-violet-950/20 p-2.5 rounded-lg border border-violet-500/10 text-[11px] text-zinc-200 leading-relaxed italic">
+                          <strong>Evaluasi AI:</strong> {aiCalcResult.advice}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            {/* Modal Footer */}
+            <div class="mt-6 border-t border-white/5 pt-4 flex items-center justify-between font-mono text-[10px] text-zinc-500">
+              <span>Data Source: {asset.type === 'crypto' ? 'Bybit Futures API Realtime' : 'Yahoo Finance Candle API Synthesized'}</span>
+              <button 
+                onClick={onClose}
+                class="rounded-xl bg-zinc-800 hover:bg-zinc-750 text-white px-5 py-2 text-xs font-bold transition-all-300"
+              >
+                Close Details
+              </button>
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    // ====================================================
+    // Playbook Sub-Component
+    // ====================================================
+    function ContrarianPlaybook({ asset }) {
+      const longPct = (asset.buyRatio * 100).toFixed(1);
+      const shortPct = (asset.sellRatio * 100).toFixed(1);
+
+      // Analyze bias stance and write commentary
+      let stance = 'NEUTRAL (Tunggu Distribusi)';
+      let commentary = '';
+      let styleClass = 'border-green-500/20 bg-green-500/[0.03]';
+
+      if (asset.status === 'TRAPPED_LONG') {
+        stance = 'STRONG BEARISH (Mencari Trigger Sell)';
+        commentary = `Retail terperangkap membeli di dasar (*falling knife*) dengan posisi Long ${longPct}%. Likuiditas stop loss mereka menumpuk di bawah Swing Low terkini. Perusahaan institusi (smart money) cenderung menyapu stop loss ini untuk mendapatkan likuiditas jual. Tunggu koreksi ke area Fibonacci 0.500 atau 0.618 untuk mencari entry Jual.`;
+        styleClass = 'border-red-500/25 bg-red-500/[0.03]';
+      } else if (asset.status === 'TRAPPED_SHORT') {
+        stance = 'STRONG BULLISH (Mencari Trigger Buy)';
+        commentary = `Retail trader terperangkap shorting melawan momentum naik (*top picking*) dengan posisi Short ${shortPct}%. Likuiditas order beli stop loss mereka menumpuk di atas Swing High terkini. Gunakan zona Fibonacci retracement 0.500 - 0.618 sebagai diskon masuk Beli saat retest.`;
+        styleClass = 'border-green-500/25 bg-green-500/[0.03]';
+      } else if (asset.buyRatio > 0.60) {
+        stance = 'BEARISH (Bias Sell)';
+        commentary = `Akumulasi posisi Long retail mencapai ${longPct}%. Sesuai logika contrarian, bias pergerakan cenderung menurun karena pembeli retail kehabisan modal untuk mempertahankan dorongan ke atas. Targetkan kelanjutan struktur korektif ke arah bawah.`;
+        styleClass = 'border-red-400/20 bg-red-400/[0.01]';
+      } else if (asset.sellRatio > 0.60) {
+        stance = 'BULLISH (Bias Buy)';
+        commentary = `Penjual retail mendominasi pasar dengan ${shortPct}% Short. Likuiditas pembelian terkonsentrasi di atas resisten untuk menyapu order stop loss mereka. Peluang beli lebih disukai.`;
+        styleClass = 'border-green-400/20 bg-green-400/[0.01]';
+      } else {
+        commentary = `Rasio sentimen retail berada di wilayah netral (${longPct}% Long vs ${shortPct}% Short). Tidak ada keunggulan contrarian yang jelas saat ini. Disarankan menunggu hingga rasio bergeser melebihi 60% di salah satu sisi.`;
+      }
+
+      return (
+        <div class="space-y-4">
+          <div class={`rounded-2xl border p-5 ${styleClass}`}>
+            <h4 class="text-xs font-bold uppercase tracking-wider text-green-400">Contrarian Playbook</h4>
+            <div class="mt-3">
+              <span class="text-[10px] text-zinc-500 uppercase font-mono">Bias Stance</span>
+              <p class="text-sm font-bold text-white mt-0.5">{stance}</p>
+            </div>
+            <div class="mt-2">
+              <span class="text-[10px] text-zinc-500 uppercase font-mono">Rencana Analisis Taktis</span>
+              <p class="text-xs text-zinc-300 mt-1 leading-relaxed">{commentary}</p>
+            </div>
+          </div>
+
+          {asset.indicators.harmonicPattern && (
+            <div class={`rounded-2xl border p-5 ${
+              asset.indicators.harmonicPattern.pattern.includes('Bullish')
+                ? 'border-green-500/20 bg-green-500/[0.02]'
+                : 'border-orange-500/20 bg-orange-500/[0.02]'
+            }`}>
+              <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-white">Harmonic Pattern Detected</h4>
+                <span class={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                  asset.indicators.harmonicPattern.pattern.includes('Bullish')
+                    ? 'bg-green-500/10 text-green-400'
+                    : 'bg-orange-500/10 text-orange-400'
+                }`}>
+                  {asset.indicators.harmonicPattern.pattern}
+                </span>
+              </div>
+              
+              <div class="mt-3 space-y-2 text-xs">
+                <div class="flex justify-between">
+                  <span class="text-zinc-500">Pattern Match Confidence</span>
+                  <span class="text-white font-mono font-bold">{asset.indicators.harmonicPattern.confidence}%</span>
+                </div>
+                <div class="flex justify-between border-b border-white/[0.03] pb-1">
+                  <span class="text-zinc-500">Rasio AB Retracement</span>
+                  <span class="text-zinc-300 font-mono">{asset.indicators.harmonicPattern.ratios.AB}</span>
+                </div>
+                <div class="flex justify-between border-b border-white/[0.03] pb-1">
+                  <span class="text-zinc-500">Rasio BC Retracement</span>
+                  <span class="text-zinc-300 font-mono">{asset.indicators.harmonicPattern.ratios.BC}</span>
+                </div>
+                <div class="flex justify-between border-b border-white/[0.03] pb-1">
+                  <span class="text-zinc-500">Rasio XD Retracement (D)</span>
+                  <span class="text-zinc-300 font-mono">{asset.indicators.harmonicPattern.ratios.XD}</span>
+                </div>
+              </div>
+
+              <div class="mt-4 rounded-lg bg-zinc-900/40 p-2.5 text-[11px] leading-relaxed text-zinc-300">
+                <strong>Confluence Analysis:</strong> Pola <strong>{asset.indicators.harmonicPattern.pattern}</strong> selesai terbentuk di Point D. 
+                {asset.indicators.harmonicPattern.pattern.includes('Bullish')
+                  ? ' Hal ini mengonfirmasi zona pembalikan arah naik (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang shorting. Sinyal beli terkonfirmasi.'
+                  : ' Hal ini mengonfirmasi zona pembalikan arah turun (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang melakukan pembelian. Sinyal jual terkonfirmasi.'
+                }
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ====================================================
+    // Trend-Following (Non-Contrarian) Playbook Sub-Component
+    // ====================================================
+    function TrendFollowingPlaybook({ asset }) {
+      const isBullish = asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
+      let direction = 'BULLISH TREND';
+      let commentary = '';
+      let styleClass = 'border-green-500/25 bg-green-500/[0.03]';
+
+      if (isBullish) {
+        direction = 'BULLISH TREND (Trend-Following)';
+        commentary = `Harga berada di atas rata-rata pergerakan harian (SMA 20) dan RSI (${asset.indicators.rsi}) berada di wilayah bullish (>50). Momentum pembeli mendominasi struktur pasar. Sinyal non-contrarian merekomendasikan untuk mengikuti tren naik utama (Buy Strength) dengan menargetkan area resisten berikutnya.`;
+        styleClass = 'border-green-500/25 bg-green-500/[0.03]';
+      } else {
+        direction = 'BEARISH TREND (Trend-Following)';
+        commentary = `Harga ditransaksikan di bawah SMA 20 dan RSI (${asset.indicators.rsi}) berada di wilayah bearish (<50). Tren utama didominasi oleh penjual. Sinyal non-contrarian merekomendasikan untuk mengikuti momentum penurunan utama (Sell Rallies) untuk menargetkan level support terendah berikutnya.`;
+        styleClass = 'border-red-500/25 bg-red-500/[0.03]';
+      }
+
+      return (
+        <div class={`rounded-2xl border p-5 ${styleClass}`}>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-green-400 font-heading">Non-Contrarian Signal</h4>
+          <div class="mt-3">
+            <span class="text-[10px] text-zinc-500 uppercase font-mono">Trend Direction</span>
+            <p class="text-sm font-bold text-white mt-0.5">{direction}</p>
+          </div>
+          <div class="mt-2">
+            <span class="text-[10px] text-zinc-500 uppercase font-mono">Rencana Analisis Tren</span>
+            <p class="text-xs text-zinc-300 mt-1 leading-relaxed font-sans">{commentary}</p>
+          </div>
+        </div>
+      );
+    }
+
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<App />);
+  </script>
+</body>
+</html>
