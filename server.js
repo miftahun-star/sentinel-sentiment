@@ -741,12 +741,13 @@ app.get('/api/sentiment/crypto', async (req, res) => {
 
     if (analysis.indicators.harmonicPattern && analysis.indicators.harmonicPattern.points) {
       const hp = analysis.indicators.harmonicPattern;
-      const sliceStart = candles.length - 30;
-      hp.points.X.index = hp.points.X.index - sliceStart;
-      hp.points.A.index = hp.points.A.index - sliceStart;
-      hp.points.B.index = hp.points.B.index - sliceStart;
-      hp.points.C.index = hp.points.C.index - sliceStart;
-      hp.points.D.index = hp.points.D.index - sliceStart;
+      const sliceStart = Math.max(0, candles.length - 30);
+      const clamp = (v) => Math.max(0, Math.min(29, v - sliceStart));
+      hp.points.X.index = clamp(hp.points.X.index);
+      hp.points.A.index = clamp(hp.points.A.index);
+      hp.points.B.index = clamp(hp.points.B.index);
+      hp.points.C.index = clamp(hp.points.C.index);
+      hp.points.D.index = clamp(hp.points.D.index);
     }
 
     res.json({
@@ -791,6 +792,7 @@ app.get('/api/sentiment/forex', async (req, res) => {
     else if (period === 'W1') { yfInterval = '1wk'; yfRange = '720d'; }
     else if (period === '1M' || period === '1month') { yfInterval = '1mo'; yfRange = '1800d'; }
 
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yfInterval}&range=${yfRange}`;
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -857,12 +859,13 @@ app.get('/api/sentiment/forex', async (req, res) => {
 
     if (analysis.indicators.harmonicPattern && analysis.indicators.harmonicPattern.points) {
       const hp = analysis.indicators.harmonicPattern;
-      const sliceStart = candles.length - 30;
-      hp.points.X.index = hp.points.X.index - sliceStart;
-      hp.points.A.index = hp.points.A.index - sliceStart;
-      hp.points.B.index = hp.points.B.index - sliceStart;
-      hp.points.C.index = hp.points.C.index - sliceStart;
-      hp.points.D.index = hp.points.D.index - sliceStart;
+      const sliceStart = Math.max(0, candles.length - 30);
+      const clamp = (v) => Math.max(0, Math.min(29, v - sliceStart));
+      hp.points.X.index = clamp(hp.points.X.index);
+      hp.points.A.index = clamp(hp.points.A.index);
+      hp.points.B.index = clamp(hp.points.B.index);
+      hp.points.C.index = clamp(hp.points.C.index);
+      hp.points.D.index = clamp(hp.points.D.index);
     }
 
     res.json({
