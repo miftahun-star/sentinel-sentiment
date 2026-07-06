@@ -235,7 +235,10 @@ function detectHarmonics(candles, period = 'H1') {
     const pA = pivots[pivots.length - 3];
     const pB = pivots[pivots.length - 2];
     const pC = pivots[pivots.length - 1];
-    const pDVal = candles[candles.length - 1].close;
+    
+    const isBullish = pA.price > pX.price;
+    const patternType = isBullish ? 'Bullish' : 'Bearish';
+    const pDVal = isBullish ? candles[candles.length - 1].low : candles[candles.length - 1].high;
     
     const X = pX.price;
     const A = pA.price;
@@ -359,8 +362,11 @@ function detectHarmonics(candles, period = 'H1') {
     const cIdx = Math.max(3, len - 10);
     const dIdx = len - 1;
 
-    const basePrice = candles[dIdx].close;
-    const factor = isBullish ? 1 : -1;
+    const pX_price = isBullish ? candles[xIdx].low : candles[xIdx].high;
+    const pA_price = isBullish ? candles[aIdx].high : candles[aIdx].low;
+    const pB_price = isBullish ? candles[bIdx].low : candles[bIdx].high;
+    const pC_price = isBullish ? candles[cIdx].high : candles[cIdx].low;
+    const pD_price = isBullish ? candles[dIdx].low : candles[dIdx].high;
 
     return {
       pattern: `${patternType} ${pName}`,
@@ -371,11 +377,11 @@ function detectHarmonics(candles, period = 'H1') {
         XD: parseFloat((isBullish ? 0.786 : 0.886).toFixed(3))
       },
       points: {
-        X: { price: basePrice - (factor * basePrice * 0.015), index: xIdx, time: candles[xIdx].time },
-        A: { price: basePrice + (factor * basePrice * 0.020), index: aIdx, time: candles[aIdx].time },
-        B: { price: basePrice - (factor * basePrice * 0.005), index: bIdx, time: candles[bIdx].time },
-        C: { price: basePrice + (factor * basePrice * 0.010), index: cIdx, time: candles[cIdx].time },
-        D: { price: basePrice, index: dIdx, time: candles[dIdx].time }
+        X: { price: pX_price, index: xIdx, time: candles[xIdx].time },
+        A: { price: pA_price, index: aIdx, time: candles[aIdx].time },
+        B: { price: pB_price, index: bIdx, time: candles[bIdx].time },
+        C: { price: pC_price, index: cIdx, time: candles[cIdx].time },
+        D: { price: pD_price, index: dIdx, time: candles[dIdx].time }
       },
       isForming: true
     };

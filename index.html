@@ -724,6 +724,7 @@
     // ====================================================
     function DetailModal({ asset, timeframe, newsList = [], onClose }) {
       const chartContainerRef = useRef(null);
+      const overlayCanvasRef = useRef(null);
       const tvChartRef = useRef(null);
       const [activeTab, setActiveTab] = useState('plan'); // 'plan' or 'indicators'
       
@@ -989,7 +990,24 @@
           });
         }
 
-        // Harmonic Pattern overlay using LineSeries
+        // Canvas overlay configuration
+        const overlayCanvas = overlayCanvasRef.current;
+        const resizeCanvas = () => {
+          if (!overlayCanvas || !container) return;
+          const dpr = window.devicePixelRatio || 1;
+          overlayCanvas.width = container.clientWidth * dpr;
+          overlayCanvas.height = 260 * dpr;
+          overlayCanvas.style.width = `${container.clientWidth}px`;
+          overlayCanvas.style.height = `260px`;
+          const ctx = overlayCanvas.getContext('2d');
+          ctx.resetTransform();
+          ctx.scale(dpr, dpr);
+        };
+        resizeCanvas();
+
+        let redrawOverlay = () => {};
+
+        // Harmonic Pattern overlay using LineSeries & Shaded Triangles on Canvas
         if (asset.indicators.harmonicPattern && asset.indicators.harmonicPattern.points) {
           const hp = asset.indicators.harmonicPattern;
           const pts = hp.points;
@@ -1015,26 +1033,6 @@
           const pC = resolvePoint(pts.C, Math.floor(tvCandles.length * 0.75));
           const pD = resolvePoint(pts.D, tvCandles.length - 1);
 
-          // Line series for XABCD path
-          const harmonicLine = chart.addLineSeries({
-            color: '#eab308',
-            lineWidth: 2,
-            lineStyle: LightweightCharts.LineStyle.Dashed,
-            lastValueVisible: false,
-            priceLineVisible: false,
-            crosshairMarkerVisible: false,
-          });
-
-          // Data must be sorted by time (ascending) — XABCD is naturally chronological
-          const lineData = [pX, pA, pB, pC, pD].filter(p => p && p.time);
-          // Deduplicate times by adding 1 second offset if needed
-          for (let i = 1; i < lineData.length; i++) {
-            if (lineData[i].time <= lineData[i - 1].time) {
-              lineData[i].time = lineData[i - 1].time + 1;
-            }
-          }
-          harmonicLine.setData(lineData);
-
           // Add XABCD markers on the candlestick series
           const labels = ['X', 'A', 'B', 'C', 'D'];
           const positions = [pX, pA, pB, pC, pD];
@@ -1046,9 +1044,73 @@
             text: labels[i],
           })).filter(m => m.time);
 
-          // Markers must be sorted by time
           markers.sort((a, b) => a.time - b.time);
           candleSeries.setMarkers(markers);
+
+          // Redraw shaded triangles XAB and BCD on the overlay canvas
+          redrawOverlay = () => {
+            if (!overlayCanvas || !tvChartRef.current) return;
+            const ctx = overlayCanvas.getContext('2d');
+            ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+            const getCoords = (p) => {
+              const x = chart.timeScale().timeToCoordinate(p.time);
+              const y = candleSeries.priceToCoordinate(p.value);
+              return { x, y };
+            };
+
+            const cX = getCoords(pX);
+            const cA = getCoords(pA);
+            const cB = getCoords(pB);
+            const cC = getCoords(pC);
+            const cD = getCoords(pD);
+
+            if (cX.x === null || cA.x === null || cB.x === null || cC.x === null || cD.x === null) return;
+            if (cX.y === null || cA.y === null || cB.y === null || cC.y === null || cD.y === null) return;
+
+            // Draw shaded triangles X-A-B and B-C-D
+            ctx.fillStyle = 'rgba(234, 179, 8, 0.12)';
+            
+            ctx.beginPath();
+            ctx.moveTo(cX.x, cX.y);
+            ctx.lineTo(cA.x, cA.y);
+            ctx.lineTo(cB.x, cB.y);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(cB.x, cB.y);
+            ctx.lineTo(cC.x, cC.y);
+            ctx.lineTo(cD.x, cD.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw dashed lines X-A-B-C-D
+            ctx.strokeStyle = '#eab308';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(cX.x, cX.y);
+            ctx.lineTo(cA.x, cA.y);
+            ctx.lineTo(cB.x, cB.y);
+            ctx.lineTo(cC.x, cC.y);
+            ctx.lineTo(cD.x, cD.y);
+            ctx.stroke();
+
+            // Draw straight boundary line X-D
+            ctx.strokeStyle = 'rgba(234, 179, 8, 0.35)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cX.x, cX.y);
+            ctx.lineTo(cD.x, cD.y);
+            ctx.stroke();
+
+            ctx.setLineDash([]);
+          };
+
+          // Subscribe to visible range updates to redraw on scroll and zoom
+          chart.timeScale().subscribeVisibleTimeRangeChange(redrawOverlay);
+          setTimeout(redrawOverlay, 100);
         }
 
         chart.timeScale().fitContent();
@@ -1057,6 +1119,8 @@
         const resizeObserver = new ResizeObserver(() => {
           if (chartContainerRef.current) {
             chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+            resizeCanvas();
+            redrawOverlay();
           }
         });
         resizeObserver.observe(container);
@@ -1302,7 +1366,10 @@
                   </div>
                 </div>
                 <div class="relative rounded-2xl border border-white/5 bg-zinc-900/20 p-4">
-                  <div ref={chartContainerRef} class="w-full" style={{minHeight: '260px'}}></div>
+                  <div class="relative w-full" style={{ minHeight: '260px' }}>
+                    <div ref={chartContainerRef} class="w-full" style={{ minHeight: '260px' }}></div>
+                    <canvas ref={overlayCanvasRef} class="absolute top-0 left-0 pointer-events-none w-full h-full z-10"></canvas>
+                  </div>
                 </div>
 
                 {/* Tabs for Plan or Indicators */}
