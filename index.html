@@ -668,7 +668,7 @@
               <h3 class="mt-1 font-heading text-lg font-bold text-white group-hover:text-green-400 transition-colors">
                 {data.name}
               </h3>
-              {data.indicators.harmonicPattern && (
+              {data.indicators && data.indicators.harmonicPattern && (
                 <span class={`mt-1.5 inline-block rounded border px-2 py-0.5 text-[8px] font-bold tracking-wider uppercase font-mono ${
                   data.indicators.harmonicPattern.pattern.includes('Bullish')
                     ? 'border-green-500/30 bg-green-500/5 text-green-400'
@@ -787,7 +787,12 @@
       };
 
       const getAntigravityAssessment = (asset) => {
-        const isBullish = asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
+        const indicators = asset.indicators || {};
+        const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
+        const sma20 = indicators.sma20 !== undefined ? indicators.sma20 : asset.price;
+        const ema50 = indicators.ema50 !== undefined ? indicators.ema50 : asset.price;
+        
+        const isBullish = rsi > 50 && asset.price > sma20;
         const price = asset.price;
         
         const atrEstimate = price * 0.012; // 1.2% ATR estimate
@@ -804,7 +809,7 @@
         let geopolitics = "kondusif";
         let nfpSentiment = "sehat";
         
-        const combinedNewsText = (newsList || []).map(n => (n.title + ' ' + (n.summary || '')).toLowerCase()).join(' ');
+        const combinedNewsText = (newsList || []).map(n => ((n.title || '') + ' ' + (n.summary || '')).toLowerCase()).join(' ');
         
         if (combinedNewsText.includes('fed') || combinedNewsText.includes('fomc') || combinedNewsText.includes('powell')) {
           if (combinedNewsText.includes('hawkish') || combinedNewsText.includes('rate hike') || combinedNewsText.includes('tahan suku bunga')) {
@@ -857,11 +862,16 @@
       };
 
       const getSentinelVerdict = (asset) => {
+        const indicators = asset.indicators || {};
+        const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
+        const sma20 = indicators.sma20 !== undefined ? indicators.sma20 : asset.price;
+        const macdHist = indicators.macd && indicators.macd.histogram !== undefined ? indicators.macd.histogram : 0;
+
         const isContrarianBuy = asset.status === 'TRAPPED_SHORT';
         const isContrarianSell = asset.status === 'TRAPPED_LONG';
         
-        const isTrendBuy = asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
-        const isTrendSell = asset.indicators.rsi < 50 && asset.price < asset.indicators.sma20;
+        const isTrendBuy = rsi > 50 && asset.price > sma20;
+        const isTrendSell = rsi < 50 && asset.price < sma20;
         
         let buyScore = 0;
         let sellScore = 0;
@@ -872,10 +882,10 @@
         if (isTrendBuy) buyScore += 35;
         if (isTrendSell) sellScore += 35;
         
-        if (asset.indicators.rsi < 30) buyScore += 15;
-        if (asset.indicators.rsi > 70) sellScore += 15;
+        if (rsi < 30) buyScore += 15;
+        if (rsi > 70) sellScore += 15;
         
-        if (asset.indicators.macd.histogram > 0) buyScore += 15;
+        if (macdHist > 0) buyScore += 15;
         else sellScore += 15;
         
         let verdictClass = 'bg-zinc-800 text-zinc-400';
@@ -891,7 +901,6 @@
           verdictClass = sellScore >= 80 ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-orange-500/5 text-orange-300 border border-orange-500/10';
           explanation = `Dasbor Sentinel menyimpulkan bias BEARISH dengan tingkat keyakinan ${sellScore}%. Terjadi keselarasan antara ritel yang terperangkap buy (contrarian sell) dan penolakan harga pada area EMA 50 serta histogram MACD negatif.`;
         }
-        
         return { verdictText, verdictClass, explanation };
       };
 
@@ -961,9 +970,10 @@
         candleSeries.setData(tvCandles);
 
         // EMA / SMA price lines
-        if (asset.indicators.ema20) {
+        const inds = asset.indicators || {};
+        if (inds.ema20) {
           candleSeries.createPriceLine({
-            price: asset.indicators.ema20,
+            price: inds.ema20,
             color: '#3b82f6',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dashed,
@@ -971,9 +981,9 @@
             title: 'EMA20',
           });
         }
-        if (asset.indicators.ema50) {
+        if (inds.ema50) {
           candleSeries.createPriceLine({
-            price: asset.indicators.ema50,
+            price: inds.ema50,
             color: '#f59e0b',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dashed,
@@ -981,9 +991,9 @@
             title: 'EMA50',
           });
         }
-        if (asset.indicators.sma100) {
+        if (inds.sma100) {
           candleSeries.createPriceLine({
-            price: asset.indicators.sma100,
+            price: inds.sma100,
             color: '#a855f7',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dashed,
@@ -1011,8 +1021,8 @@
         let redrawOverlay = () => {};
 
         // Harmonic Pattern overlay using LineSeries & Shaded Triangles on Canvas
-        if (asset.indicators.harmonicPattern && asset.indicators.harmonicPattern.points) {
-          const hp = asset.indicators.harmonicPattern;
+        if (inds.harmonicPattern && inds.harmonicPattern.points) {
+          const hp = inds.harmonicPattern;
           const pts = hp.points;
 
           // Safely resolve each point
@@ -1497,27 +1507,27 @@
                 )}
 
                 {/* Tab 2 Content: Extended Metrics */}
-                {activeTab === 'indicators' && (
+                {activeTab === 'indicators' && asset.indicators ? (
                   <div class="mt-4 grid grid-cols-2 gap-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4 text-xs font-mono">
                     {/* Column 1: Oscillators & Momentum */}
                     <div class="space-y-3">
                       <div>
                         <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Stochastic Oscillator</span>
                         <div class="mt-1 flex items-center justify-between text-zinc-300">
-                          <span>%K Line: <span class="text-white font-bold">{asset.indicators.stochastic.k}</span></span>
-                          <span>%D Signal: <span class="text-zinc-400 font-bold">{asset.indicators.stochastic.d}</span></span>
+                          <span>%K Line: <span class="text-white font-bold">{asset.indicators.stochastic ? asset.indicators.stochastic.k : 'N/A'}</span></span>
+                          <span>%D Signal: <span class="text-zinc-400 font-bold">{asset.indicators.stochastic ? asset.indicators.stochastic.d : 'N/A'}</span></span>
                         </div>
                         <span class="text-[10px] text-zinc-500 block mt-0.5">
-                          {asset.indicators.stochastic.k < 20 ? 'Oversold (Bullish Bias)' : asset.indicators.stochastic.k > 80 ? 'Overbought (Bearish Bias)' : 'Neutral'}
+                          {asset.indicators.stochastic ? (asset.indicators.stochastic.k < 20 ? 'Oversold (Bullish Bias)' : asset.indicators.stochastic.k > 80 ? 'Overbought (Bearish Bias)' : 'Neutral') : 'N/A'}
                         </span>
                       </div>
 
                       <div class="border-t border-white/5 pt-2">
                         <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">MACD Indicator</span>
                         <div class="mt-1 space-y-0.5 text-[11px]">
-                          <div class="flex justify-between"><span>MACD Line</span><span class="text-white">{asset.indicators.macd.macd}</span></div>
-                          <div class="flex justify-between"><span>Signal Line</span><span class="text-zinc-400">{asset.indicators.macd.signal}</span></div>
-                          <div class="flex justify-between"><span>Histogram</span><span class={asset.indicators.macd.histogram >= 0 ? 'text-green-400' : 'text-red-400'}>{asset.indicators.macd.histogram}</span></div>
+                          <div class="flex justify-between"><span>MACD Line</span><span class="text-white">{asset.indicators.macd ? asset.indicators.macd.macd : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Signal Line</span><span class="text-zinc-400">{asset.indicators.macd ? asset.indicators.macd.signal : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Histogram</span><span class={asset.indicators.macd && asset.indicators.macd.histogram >= 0 ? 'text-green-400' : 'text-red-400'}>{asset.indicators.macd ? asset.indicators.macd.histogram : 'N/A'}</span></div>
                         </div>
                       </div>
                     </div>
@@ -1527,10 +1537,10 @@
                       <div>
                         <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Ichimoku Cloud Components</span>
                         <div class="mt-1 space-y-0.5 text-[11px]">
-                          <div class="flex justify-between"><span>Tenkan-sen (9)</span><span class="text-white">{asset.indicators.ichimoku.tenkan}</span></div>
-                          <div class="flex justify-between"><span>Kijun-sen (26)</span><span class="text-zinc-400">{asset.indicators.ichimoku.kijun}</span></div>
-                          <div class="flex justify-between"><span>Senkou Span A</span><span class="text-green-400/80">{asset.indicators.ichimoku.spanA}</span></div>
-                          <div class="flex justify-between"><span>Senkou Span B</span><span class="text-red-400/80">{asset.indicators.ichimoku.spanB}</span></div>
+                          <div class="flex justify-between"><span>Tenkan-sen (9)</span><span class="text-white">{asset.indicators.ichimoku ? asset.indicators.ichimoku.tenkan : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Kijun-sen (26)</span><span class="text-zinc-400">{asset.indicators.ichimoku ? asset.indicators.ichimoku.kijun : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Senkou Span A</span><span class="text-green-400/80">{asset.indicators.ichimoku ? asset.indicators.ichimoku.spanA : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Senkou Span B</span><span class="text-red-400/80">{asset.indicators.ichimoku ? asset.indicators.ichimoku.spanB : 'N/A'}</span></div>
                         </div>
                       </div>
 
@@ -1543,6 +1553,8 @@
                       </div>
                     </div>
                   </div>
+                ) : (
+                  activeTab === 'indicators' && <div class="mt-4 rounded-2xl border border-white/5 bg-white/[0.01] p-6 text-center text-xs text-zinc-500">Data indikator tidak tersedia.</div>
                 )}
 
                 {/* Tab 3 Content: HFM Market Hours & Sessions */}
@@ -1710,11 +1722,11 @@
                   <div class="grid grid-cols-2 gap-2 text-center">
                     <div class="rounded-xl bg-zinc-900/40 p-2.5">
                       <span class="block text-[10px] text-zinc-500 uppercase">RSI (14)</span>
-                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators.rsi}</span>
+                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators ? asset.indicators.rsi : 'N/A'}</span>
                     </div>
                     <div class="rounded-xl bg-zinc-900/40 p-2.5">
                       <span class="block text-[10px] text-zinc-500 uppercase">Bollinger %B</span>
-                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators.percentB}</span>
+                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators ? asset.indicators.percentB : 'N/A'}</span>
                     </div>
                   </div>
                 </div>
@@ -1983,7 +1995,7 @@
             </div>
           </div>
 
-          {asset.indicators.harmonicPattern && (
+          {asset.indicators && asset.indicators.harmonicPattern && (
             <div class={`rounded-2xl border p-5 ${
               asset.indicators.harmonicPattern.pattern.includes('Bullish')
                 ? 'border-green-500/20 bg-green-500/[0.02]'
