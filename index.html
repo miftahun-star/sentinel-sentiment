@@ -996,12 +996,17 @@
 
           // Safely resolve each point
           const resolvePoint = (pt, fallbackIdx) => {
-            if (typeof pt === 'object' && pt.index !== undefined && pt.price !== undefined) {
-              const idx = Math.max(0, Math.min(tvCandles.length - 1, pt.index));
-              return { time: tvCandles[idx].time, value: pt.price };
+            if (typeof pt === 'object' && pt.price !== undefined) {
+              if (pt.time !== undefined) {
+                return { time: Math.floor(pt.time / 1000), value: pt.price };
+              }
+              if (pt.index !== undefined) {
+                const idx = Math.max(0, Math.min(tvCandles.length - 1, pt.index));
+                return { time: tvCandles[idx].time, value: pt.price };
+              }
             }
             const idx = Math.max(0, Math.min(tvCandles.length - 1, fallbackIdx));
-            return { time: tvCandles[idx].time, value: pt };
+            return { time: tvCandles[idx].time, value: typeof pt === 'object' ? pt.price : pt };
           };
 
           const pX = resolvePoint(pts.X, 0);

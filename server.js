@@ -347,11 +347,11 @@ function detectHarmonics(candles, period = 'H1') {
             XD: parseFloat(displayXD.toFixed(3))
           },
           points: {
-            X: { price: X, index: pX.index },
-            A: { price: A, index: pA.index },
-            B: { price: B, index: pB.index },
-            C: { price: C, index: pC.index },
-            D: { price: D, index: candles.length - 1 }
+            X: { price: X, index: pX.index, time: candles[pX.index].time },
+            A: { price: A, index: pA.index, time: candles[pA.index].time },
+            B: { price: B, index: pB.index, time: candles[pB.index].time },
+            C: { price: C, index: pC.index, time: candles[pC.index].time },
+            D: { price: D, index: candles.length - 1, time: candles[candles.length - 1].time }
           }
         };
       }
@@ -384,11 +384,11 @@ function detectHarmonics(candles, period = 'H1') {
         XD: parseFloat((isBullish ? 0.786 : 0.886).toFixed(3))
       },
       points: {
-        X: { price: basePrice - (factor * basePrice * 0.015), index: xIdx },
-        A: { price: basePrice + (factor * basePrice * 0.020), index: aIdx },
-        B: { price: basePrice - (factor * basePrice * 0.005), index: bIdx },
-        C: { price: basePrice + (factor * basePrice * 0.010), index: cIdx },
-        D: { price: basePrice, index: dIdx }
+        X: { price: basePrice - (factor * basePrice * 0.015), index: xIdx, time: candles[xIdx].time },
+        A: { price: basePrice + (factor * basePrice * 0.020), index: aIdx, time: candles[aIdx].time },
+        B: { price: basePrice - (factor * basePrice * 0.005), index: bIdx, time: candles[bIdx].time },
+        C: { price: basePrice + (factor * basePrice * 0.010), index: cIdx, time: candles[cIdx].time },
+        D: { price: basePrice, index: dIdx, time: candles[dIdx].time }
       },
       isForming: true
     };
@@ -751,8 +751,8 @@ app.get('/api/sentiment/crypto', async (req, res) => {
 
     if (analysis.indicators.harmonicPattern && analysis.indicators.harmonicPattern.points) {
       const hp = analysis.indicators.harmonicPattern;
-      const sliceStart = Math.max(0, candles.length - 30);
-      const clamp = (v) => Math.max(0, Math.min(29, v - sliceStart));
+      const sliceStart = Math.max(0, candles.length - 100);
+      const clamp = (v) => Math.max(0, Math.min(99, v - sliceStart));
       hp.points.X.index = clamp(hp.points.X.index);
       hp.points.A.index = clamp(hp.points.A.index);
       hp.points.B.index = clamp(hp.points.B.index);
@@ -767,7 +767,7 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       buyRatio: parseFloat(buyRatio.toFixed(4)),
       sellRatio: parseFloat(sellRatio.toFixed(4)),
       status: sentimentStatus,
-      candles: candles.slice(-30),
+      candles: candles.slice(-100),
       indicators: analysis.indicators
     });
 
@@ -869,8 +869,8 @@ app.get('/api/sentiment/forex', async (req, res) => {
 
     if (analysis.indicators.harmonicPattern && analysis.indicators.harmonicPattern.points) {
       const hp = analysis.indicators.harmonicPattern;
-      const sliceStart = Math.max(0, candles.length - 30);
-      const clamp = (v) => Math.max(0, Math.min(29, v - sliceStart));
+      const sliceStart = Math.max(0, candles.length - 100);
+      const clamp = (v) => Math.max(0, Math.min(99, v - sliceStart));
       hp.points.X.index = clamp(hp.points.X.index);
       hp.points.A.index = clamp(hp.points.A.index);
       hp.points.B.index = clamp(hp.points.B.index);
@@ -885,7 +885,7 @@ app.get('/api/sentiment/forex', async (req, res) => {
       buyRatio: analysis.buyRatio,
       sellRatio: analysis.sellRatio,
       status: analysis.status,
-      candles: candles.slice(-30),
+      candles: candles.slice(-100),
       indicators: analysis.indicators
     });
 
