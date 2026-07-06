@@ -832,9 +832,14 @@ app.get('/api/news', async (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
-  console.log(`==================================================`);
-  console.log(` SENTINEL SENTIMENT BACKEND RUNNING SUCCESSFULY `);
-  console.log(` Server URL: http://localhost:${PORT}             `);
-  console.log(`==================================================`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`==================================================`);
+    console.log(` SENTINEL SENTIMENT BACKEND RUNNING SUCCESSFULY `);
+    console.log(` Server URL: http://localhost:${PORT}             `);
+    console.log(`==================================================`);
+  });
+}
+
+export default app;
+
