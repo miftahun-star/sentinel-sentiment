@@ -563,7 +563,12 @@ app.get('/api/sentiment/crypto', async (req, res) => {
         'ETHUSDT': 'ethereum',
         'SOLUSDT': 'solana',
         'HYPEUSDT': 'hyperliquid',
-        'ASTERUSDT': 'aster-2'
+        'ASTERUSDT': 'aster-2',
+        'LTCUSDT': 'litecoin',
+        'XRPUSDT': 'ripple',
+        'DOGEUSDT': 'dogecoin',
+        'LINKUSDT': 'chainlink',
+        'TRXUSDT': 'tron'
       };
       
       const geckoId = geckoIds[symbol];
@@ -592,6 +597,11 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       if (symbol === 'BTCUSDT') yahooSymbol = 'BTC-USD';
       else if (symbol === 'ETHUSDT') yahooSymbol = 'ETH-USD';
       else if (symbol === 'SOLUSDT') yahooSymbol = 'SOL-USD';
+      else if (symbol === 'LTCUSDT') yahooSymbol = 'LTC-USD';
+      else if (symbol === 'XRPUSDT') yahooSymbol = 'XRP-USD';
+      else if (symbol === 'DOGEUSDT') yahooSymbol = 'DOGE-USD';
+      else if (symbol === 'LINKUSDT') yahooSymbol = 'LINK-USD';
+      else if (symbol === 'TRXUSDT') yahooSymbol = 'TRX-USD';
       else if (symbol === 'HYPEUSDT' || symbol === 'ASTERUSDT') yahooSymbol = 'SOL-USD';
       
       let yfInterval = '1h';

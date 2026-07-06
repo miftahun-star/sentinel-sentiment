@@ -15,6 +15,8 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <!-- Babel for inline JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- TradingView Lightweight Charts -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
     body {
@@ -65,9 +67,22 @@
       { id: 'SOL', name: 'Solana', symbol: 'SOLUSDT', type: 'crypto', apiSymbol: 'SOLUSDT' },
       { id: 'HYPE', name: 'Hyperliquid', symbol: 'HYPEUSDT', type: 'crypto', apiSymbol: 'HYPEUSDT' },
       { id: 'ASTER', name: 'Aster DEX', symbol: 'ASTERUSDT', type: 'crypto', apiSymbol: 'ASTERUSDT' },
+      { id: 'LTC', name: 'Litecoin', symbol: 'LTCUSDT', type: 'crypto', apiSymbol: 'LTCUSDT' },
+      { id: 'XRP', name: 'Ripple', symbol: 'XRPUSDT', type: 'crypto', apiSymbol: 'XRPUSDT' },
+      { id: 'DOGE', name: 'Dogecoin', symbol: 'DOGEUSDT', type: 'crypto', apiSymbol: 'DOGEUSDT' },
+      { id: 'LINK', name: 'Chainlink', symbol: 'LINKUSDT', type: 'crypto', apiSymbol: 'LINKUSDT' },
+      { id: 'TRX', name: 'Tron', symbol: 'TRXUSDT', type: 'crypto', apiSymbol: 'TRXUSDT' },
       
       // XAU (Gold) (Yahoo Finance)
       { id: 'XAU', name: 'Gold Spot', symbol: 'XAUUSD', type: 'forex', apiSymbol: 'GC=F' },
+      
+      // Indices (Yahoo Finance)
+      { id: 'USA30', name: 'US Wall St 30', symbol: 'USA30', type: 'forex', apiSymbol: 'YM=F' },
+      { id: 'USA100', name: 'US Tech 100', symbol: 'USA100', type: 'forex', apiSymbol: 'NQ=F' },
+      { id: 'USA500', name: 'US 500', symbol: 'USA500', type: 'forex', apiSymbol: 'ES=F' },
+      { id: 'UK100', name: 'UK 100', symbol: 'UK100', type: 'forex', apiSymbol: '^FTSE' },
+      { id: 'JPN225', name: 'Japan 225', symbol: 'JPN225', type: 'forex', apiSymbol: '^N225' },
+      { id: 'SPA35', name: 'Spain 35', symbol: 'SPA35', type: 'forex', apiSymbol: '^IBEX' },
       
       // Forex (Yahoo Finance)
       { id: 'EURUSD', name: 'Euro / US Dollar', symbol: 'EURUSD', type: 'forex', apiSymbol: 'EURUSD=X' },
@@ -708,7 +723,8 @@
     // Modal Component: Detailed Read & Technical Indicators
     // ====================================================
     function DetailModal({ asset, timeframe, newsList = [], onClose }) {
-      const canvasRef = useRef(null);
+      const chartContainerRef = useRef(null);
+      const tvChartRef = useRef(null);
       const [activeTab, setActiveTab] = useState('plan'); // 'plan' or 'indicators'
       
       const [accountSizeStr, setAccountSizeStr] = useState('');
@@ -877,203 +893,174 @@
         return { verdictText, verdictClass, explanation };
       };
 
-      // Draw custom candlestick chart on canvas
+      // TradingView Lightweight Charts rendering
       useEffect(() => {
-        if (!canvasRef.current || !asset.candles || asset.candles.length === 0) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        ctx.scale(dpr, dpr);
+        if (!chartContainerRef.current || !asset.candles || asset.candles.length === 0) return;
 
-        const width = rect.width;
-        const height = rect.height;
-
-        ctx.clearRect(0, 0, width, height);
-
-        const paddingLeft = 10;
-        const paddingRight = 60;
-        const paddingTop = 20;
-        const paddingBottom = 20;
-        
-        const chartWidth = width - paddingLeft - paddingRight;
-        const chartHeight = height - paddingTop - paddingBottom;
-
-        const prices = asset.candles.map(c => c.close);
-        const highs = asset.candles.map(c => c.high);
-        const lows = asset.candles.map(c => c.low);
-
-        const maxPrice = Math.max(...highs);
-        const minPrice = Math.min(...lows);
-        const priceRange = maxPrice - minPrice;
-
-        const getX = (index) => paddingLeft + (index / (asset.candles.length - 1)) * chartWidth;
-        const getY = (val) => paddingTop + chartHeight - ((val - minPrice) / (priceRange || 0.0001)) * chartHeight;
-
-        // Draw horizontal grid lines & prices
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-        ctx.fillStyle = '#71717a';
-        ctx.font = '10px JetBrains Mono';
-        ctx.lineWidth = 1;
-
-        const gridLines = 4;
-        for (let i = 0; i <= gridLines; i++) {
-          const priceVal = minPrice + (i / gridLines) * priceRange;
-          const y = getY(priceVal);
-          
-          ctx.beginPath();
-          ctx.moveTo(paddingLeft, y);
-          ctx.lineTo(width - paddingRight, y);
-          ctx.stroke();
-
-          ctx.fillText(
-            priceVal.toLocaleString('en-US', { minimumFractionDigits: asset.type === 'crypto' ? 2 : 4 }),
-            width - paddingRight + 5,
-            y + 3
-          );
+        // Destroy previous chart
+        if (tvChartRef.current) {
+          tvChartRef.current.remove();
+          tvChartRef.current = null;
         }
 
-        // Draw Bollinger Bands (Upper, Lower, Mid/SMA20)
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.15)'; // Lower Band
-        ctx.beginPath();
-        asset.candles.forEach((c, idx) => {
-          const x = getX(idx);
-          const y = getY(asset.indicators.lowerBand || c.close);
-          if (idx === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+        const container = chartContainerRef.current;
+        container.innerHTML = '';
+
+        const chart = LightweightCharts.createChart(container, {
+          width: container.clientWidth,
+          height: 260,
+          layout: {
+            background: { type: 'solid', color: 'transparent' },
+            textColor: '#71717a',
+            fontSize: 10,
+            fontFamily: 'JetBrains Mono, monospace',
+          },
+          grid: {
+            vertLines: { color: 'rgba(255,255,255,0.03)' },
+            horzLines: { color: 'rgba(255,255,255,0.03)' },
+          },
+          crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal,
+            vertLine: { color: 'rgba(234,179,8,0.3)', labelBackgroundColor: '#18181b' },
+            horzLine: { color: 'rgba(234,179,8,0.3)', labelBackgroundColor: '#18181b' },
+          },
+          rightPriceScale: {
+            borderColor: 'rgba(255,255,255,0.06)',
+            scaleMargins: { top: 0.1, bottom: 0.1 },
+          },
+          timeScale: {
+            borderColor: 'rgba(255,255,255,0.06)',
+            timeVisible: true,
+            secondsVisible: false,
+          },
+          handleScroll: true,
+          handleScale: true,
         });
-        ctx.stroke();
+        tvChartRef.current = chart;
 
-        ctx.strokeStyle = 'rgba(34, 197, 94, 0.15)'; // Upper Band
-        ctx.beginPath();
-        asset.candles.forEach((c, idx) => {
-          const x = getX(idx);
-          const y = getY(asset.indicators.upperBand || c.close);
-          if (idx === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-
-        // Draw EMA 50 line
-        ctx.strokeStyle = 'rgba(59, 130, 246, 0.35)'; // EMA 50 Orange/Blue
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        asset.candles.forEach((c, idx) => {
-          const x = getX(idx);
-          const y = getY(asset.indicators.ema50 || c.close);
-          if (idx === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-
-        // Draw candles
-        const candleWidth = (chartWidth / asset.candles.length) * 0.7;
-        asset.candles.forEach((candle, idx) => {
-          const x = getX(idx);
-          const yOpen = getY(candle.open);
-          const yClose = getY(candle.close);
-          const yHigh = getY(candle.high);
-          const yLow = getY(candle.low);
-          
-          const isGreen = candle.close >= candle.open;
-          ctx.strokeStyle = isGreen ? '#22c55e' : '#ef4444';
-          ctx.fillStyle = isGreen ? '#22c55e' : '#ef4444';
-          ctx.lineWidth = 1.5;
-
-          ctx.beginPath();
-          ctx.moveTo(x, yHigh);
-          ctx.lineTo(x, yLow);
-          ctx.stroke();
-
-          const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
-          ctx.fillRect(x - candleWidth / 2, Math.min(yOpen, yClose), candleWidth, bodyHeight);
+        // Candlestick series
+        const candleSeries = chart.addCandlestickSeries({
+          upColor: '#22c55e',
+          downColor: '#ef4444',
+          borderUpColor: '#22c55e',
+          borderDownColor: '#ef4444',
+          wickUpColor: '#22c55e80',
+          wickDownColor: '#ef444480',
         });
 
-        // Draw Harmonic Pattern Overlay (if exists)
+        const tvCandles = asset.candles.map(c => ({
+          time: Math.floor(c.time / 1000),
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        }));
+        candleSeries.setData(tvCandles);
+
+        // EMA / SMA price lines
+        if (asset.indicators.ema20) {
+          candleSeries.createPriceLine({
+            price: asset.indicators.ema20,
+            color: '#3b82f6',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: false,
+            title: 'EMA20',
+          });
+        }
+        if (asset.indicators.ema50) {
+          candleSeries.createPriceLine({
+            price: asset.indicators.ema50,
+            color: '#f59e0b',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: false,
+            title: 'EMA50',
+          });
+        }
+        if (asset.indicators.sma100) {
+          candleSeries.createPriceLine({
+            price: asset.indicators.sma100,
+            color: '#a855f7',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: false,
+            title: 'SMA100',
+          });
+        }
+
+        // Harmonic Pattern overlay using LineSeries
         if (asset.indicators.harmonicPattern && asset.indicators.harmonicPattern.points) {
           const hp = asset.indicators.harmonicPattern;
           const pts = hp.points;
-          
-          const ptX = typeof pts.X === 'object' ? pts.X : { price: pts.X, index: Math.max(0, asset.candles.length - 35) };
-          const ptA = typeof pts.A === 'object' ? pts.A : { price: pts.A, index: Math.max(1, asset.candles.length - 27) };
-          const ptB = typeof pts.B === 'object' ? pts.B : { price: pts.B, index: Math.max(2, asset.candles.length - 18) };
-          const ptC = typeof pts.C === 'object' ? pts.C : { price: pts.C, index: Math.max(3, asset.candles.length - 10) };
-          const ptD = typeof pts.D === 'object' ? pts.D : { price: pts.D, index: asset.candles.length - 1 };
 
-          const xX = getX(ptX.index);
-          const yX = getY(ptX.price);
-          const xA = getX(ptA.index);
-          const yA = getY(ptA.price);
-          const xB = getX(ptB.index);
-          const yB = getY(ptB.price);
-          const xC = getX(ptC.index);
-          const yC = getY(ptC.price);
-          const xD = getX(ptD.index);
-          const yD = getY(ptD.price);
-
-          // Draw filled triangles: X-A-B and B-C-D
-          ctx.fillStyle = 'rgba(234, 179, 8, 0.08)'; // Semi-transparent Gold
-          ctx.beginPath();
-          ctx.moveTo(xX, yX);
-          ctx.lineTo(xA, yA);
-          ctx.lineTo(xB, yB);
-          ctx.closePath();
-          ctx.fill();
-
-          ctx.beginPath();
-          ctx.moveTo(xB, yB);
-          ctx.lineTo(xC, yC);
-          ctx.lineTo(xD, yD);
-          ctx.closePath();
-          ctx.fill();
-
-          // Draw lines X-A-B-C-D
-          ctx.strokeStyle = '#eab308'; // Gold color
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([2, 2]); // Dotted lines for premium look
-          ctx.beginPath();
-          ctx.moveTo(xX, yX);
-          ctx.lineTo(xA, yA);
-          ctx.lineTo(xB, yB);
-          ctx.lineTo(xC, yC);
-          ctx.lineTo(xD, yD);
-          ctx.stroke();
-          ctx.setLineDash([]); // Reset dash
-
-          // Draw outer leg boundary X-D
-          ctx.strokeStyle = 'rgba(234, 179, 8, 0.3)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(xX, yX);
-          ctx.lineTo(xD, yD);
-          ctx.stroke();
-
-          // Draw vertex labels
-          const drawLabel = (text, x, y, isAbove) => {
-            ctx.beginPath();
-            ctx.arc(x, y, 4, 0, 2 * Math.PI);
-            ctx.fillStyle = '#eab308';
-            ctx.fill();
-            ctx.strokeStyle = '#09090b';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 9px JetBrains Mono';
-            ctx.fillText(text, x - 3, isAbove ? y - 8 : y + 14);
+          // Safely resolve each point
+          const resolvePoint = (pt, fallbackIdx) => {
+            if (typeof pt === 'object' && pt.index !== undefined && pt.price !== undefined) {
+              const idx = Math.max(0, Math.min(tvCandles.length - 1, pt.index));
+              return { time: tvCandles[idx].time, value: pt.price };
+            }
+            const idx = Math.max(0, Math.min(tvCandles.length - 1, fallbackIdx));
+            return { time: tvCandles[idx].time, value: pt };
           };
 
-          drawLabel('X', xX, yX, yX < yA);
-          drawLabel('A', xA, yA, yA < yB);
-          drawLabel('B', xB, yB, yB < yA);
-          drawLabel('C', xC, yC, yC < yD);
-          drawLabel('D', xD, yD, yD < xC);
+          const pX = resolvePoint(pts.X, 0);
+          const pA = resolvePoint(pts.A, Math.floor(tvCandles.length * 0.25));
+          const pB = resolvePoint(pts.B, Math.floor(tvCandles.length * 0.5));
+          const pC = resolvePoint(pts.C, Math.floor(tvCandles.length * 0.75));
+          const pD = resolvePoint(pts.D, tvCandles.length - 1);
+
+          // Line series for XABCD path
+          const harmonicLine = chart.addLineSeries({
+            color: '#eab308',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            crosshairMarkerVisible: false,
+          });
+
+          // Data must be sorted by time (ascending) — XABCD is naturally chronological
+          const lineData = [pX, pA, pB, pC, pD].filter(p => p && p.time);
+          // Deduplicate times by adding 1 second offset if needed
+          for (let i = 1; i < lineData.length; i++) {
+            if (lineData[i].time <= lineData[i - 1].time) {
+              lineData[i].time = lineData[i - 1].time + 1;
+            }
+          }
+          harmonicLine.setData(lineData);
+
+          // Add XABCD markers on the candlestick series
+          const labels = ['X', 'A', 'B', 'C', 'D'];
+          const positions = [pX, pA, pB, pC, pD];
+          const markers = positions.map((p, i) => ({
+            time: p.time,
+            position: i % 2 === 0 ? 'belowBar' : 'aboveBar',
+            color: '#eab308',
+            shape: 'circle',
+            text: labels[i],
+          })).filter(m => m.time);
+
+          // Markers must be sorted by time
+          markers.sort((a, b) => a.time - b.time);
+          candleSeries.setMarkers(markers);
         }
 
+        chart.timeScale().fitContent();
+
+        // Responsive resize
+        const resizeObserver = new ResizeObserver(() => {
+          if (chartContainerRef.current) {
+            chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+          }
+        });
+        resizeObserver.observe(container);
+
+        return () => {
+          resizeObserver.disconnect();
+          chart.remove();
+          tvChartRef.current = null;
+        };
       }, [asset]);
 
       // Calculate Fibonacci-based Trade Setup
@@ -1310,7 +1297,7 @@
                   </div>
                 </div>
                 <div class="relative rounded-2xl border border-white/5 bg-zinc-900/20 p-4">
-                  <canvas ref={canvasRef} class="h-[240px] w-full"></canvas>
+                  <div ref={chartContainerRef} class="w-full" style={{minHeight: '260px'}}></div>
                 </div>
 
                 {/* Tabs for Plan or Indicators */}
