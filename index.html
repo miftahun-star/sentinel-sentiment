@@ -1067,13 +1067,17 @@
             ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
             const getCoords = (p) => {
+              if (!p || p.value === undefined || p.value === null || isNaN(p.value) || p.time === undefined || p.time === null || isNaN(p.time)) {
+                return { x: null, y: null };
+              }
+              
               let x = chart.timeScale().timeToCoordinate(p.time);
               let y = candleSeries.priceToCoordinate(p.value);
 
               // Off-screen coordinate estimation if null
               if (x === null) {
                 const visibleRange = chart.timeScale().getVisibleRange();
-                if (visibleRange) {
+                if (visibleRange && visibleRange.from !== undefined && visibleRange.from !== null) {
                   if (p.time < visibleRange.from) {
                     x = -500;
                   } else {
@@ -1083,7 +1087,7 @@
                   x = -500;
                 }
               }
-              if (y === null) {
+              if (y === null || isNaN(y)) {
                 y = 0;
               }
               return { x, y };
