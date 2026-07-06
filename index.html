@@ -1381,7 +1381,7 @@
 
       return (
         <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-opacity duration-300">
-          <div class="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8 shadow-2xl shadow-black/80">
+          <div class={`relative w-full max-w-5xl max-h-[92vh] rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8 shadow-2xl shadow-black/80 ${isFullscreen ? 'overflow-hidden' : 'overflow-y-auto'}`}>
             
             <button 
               onClick={onClose}
@@ -1417,9 +1417,18 @@
                     <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Live Candlestick Spark Chart</p>
                     <button 
                       onClick={() => setIsFullscreen(!isFullscreen)}
-                      class="rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-white/5 px-3 py-1 text-[10px] uppercase font-bold text-zinc-300 hover:text-white transition-all shadow-sm"
+                      class="flex items-center justify-center rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/10 p-2 text-zinc-300 hover:text-white transition-all shadow-sm"
+                      title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                     >
-                      {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                      {isFullscreen ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M15 9V4.5M15 9h4.5M15 9l5.25-5.25M9 15v4.5M9 15H4.5m4.5 0L3.75 20.25M15 15v4.5m0-4.5h4.5m-4.5 0l5.25 5.25" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75h4.5m-4.5 0v4.5m0-4.5L9 9M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m-11.25 11.25h4.5m-4.5 0v-4.5m0 4.5L9 15m11.25 5.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                        </svg>
+                      )}
                     </button>
                   </div>
                   <div class="flex items-center gap-4 text-[10px] text-zinc-500 font-mono">
@@ -1429,7 +1438,7 @@
                   </div>
                 </div>
                 <div class={isFullscreen 
-                  ? "fixed inset-0 z-[100] bg-zinc-950/98 p-6 flex flex-col justify-between" 
+                  ? "absolute inset-0 z-[60] rounded-3xl bg-zinc-950 p-6 flex flex-col justify-between" 
                   : "relative rounded-2xl border border-white/5 bg-zinc-900/20 p-4"
                 }>
                   {isFullscreen && (
@@ -1440,9 +1449,12 @@
                       </div>
                       <button 
                         onClick={() => setIsFullscreen(false)}
-                        class="rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-4 py-2 text-xs font-bold text-red-400 transition-colors"
+                        class="flex items-center justify-center rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 p-2.5 text-red-400 transition-colors"
+                        title="Tutup Fullscreen"
                       >
-                        TUTUP FULLSCREEN
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M15 9V4.5M15 9h4.5M15 9l5.25-5.25M9 15v4.5M9 15H4.5m4.5 0L3.75 20.25M15 15v4.5m0-4.5h4.5m-4.5 0l5.25 5.25" />
+                        </svg>
                       </button>
                     </div>
                   )}
