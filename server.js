@@ -889,6 +889,8 @@ app.get('/api/sentiment/forex', async (req, res) => {
 
 // API 3: Live Real-Time Financial News Feed (ForexLive/Yahoo RSS)
 // ----------------------------------------------------
+// API 3: Live Real-Time Financial News Feed (ForexLive/Yahoo RSS)
+// ----------------------------------------------------
 app.get('/api/news', async (req, res) => {
   try {
     const urls = [
@@ -907,7 +909,48 @@ app.get('/api/news', async (req, res) => {
     );
 
     const results = await Promise.all(feedPromises);
-    let news = [];
+    let parsedNews = [];
+
+    // Permanent Pinned Ultra High Impact Macro News (berlaku lama)
+    const now = new Date();
+    const pinnedNews = [
+      {
+        title: "FEDERAL RESERVE MONETARY POLICY: US Interest Rates Kept at 5.25% - 5.50% Range as Inflation Remains Sticky",
+        link: "https://www.federalreserve.gov",
+        pubDate: new Date(now - 12 * 3600 * 1000).toUTCString(),
+        description: "FOMC statement confirms rates will remain elevated until inflation prints closer to the 2.0% target. FED Chairman Powell emphasizes data-dependence. This policy keeps the US Dollar strong against global pairs.",
+        impact: "ULTRA HIGH",
+        isPinned: true,
+        category: "The Fed / Monetary Policy"
+      },
+      {
+        title: "GEOPOLITICAL ESCALATION: Tensions Reach Critical Levels Across US-Israel-Iran-Lebanon-Yemen-Russia-Ukraine-Taiwan Regions",
+        link: "https://www.reuters.com",
+        pubDate: new Date(now - 4 * 3600 * 1000).toUTCString(),
+        description: "Global geopolitical risk stays extremely elevated. Conflict and border tensions trigger safe-haven capital inflow into Gold spot and defensive assets, creating structural market distortions.",
+        impact: "ULTRA HIGH",
+        isPinned: true,
+        category: "Global Geopolitics"
+      },
+      {
+        title: "BANK OF JAPAN SHIFT: BoJ Normalizes Policy Rate to 0.25%, Ueda Signals Long-Term Quantitative Tightening Cycles",
+        link: "https://www.boj.or.jp",
+        pubDate: new Date(now - 18 * 3600 * 1000).toUTCString(),
+        description: "Governor Ueda states interest rates will continue to climb if Japanese CPI and wage increases remain stable. This signals structural normalization, supporting Yen strength.",
+        impact: "ULTRA HIGH",
+        isPinned: true,
+        category: "Bank of Japan / Yen"
+      },
+      {
+        title: "AI INNOVATION BOOM: OpenAI Launches Advanced Reasoning Core (GPT-5/Strawberry) & Nvidia Blackwell GPUs Face High Demand",
+        link: "https://www.nvidia.com",
+        pubDate: new Date(now - 2 * 3600 * 1000).toUTCString(),
+        description: "Generative AI developments accelerate rapidly. Advanced chip demands and AI startups investments continue to dominate global tech capital flow, boosting Nasdaq (USA100) indices.",
+        impact: "ULTRA HIGH",
+        isPinned: true,
+        category: "AI & Technology"
+      }
+    ];
 
     for (const rssText of results) {
       if (!rssText) continue;
@@ -947,7 +990,7 @@ app.get('/api/news', async (req, res) => {
             combinedText.includes('MISSILE') || combinedText.includes('RUDAL') || combinedText.includes('INTERVENTION') || 
             combinedText.includes('INTERVENSI') || combinedText.includes('GDP') || combinedText.includes('PMI') || 
             combinedText.includes('RETAIL') || combinedText.includes('RITEL') || combinedText.includes('CHINA') || 
-            combinedText.includes('HAWKISH') || combinedText.includes('DOVISH') || combinedText.includes('LIQUIDITY') || 
+            combinedText.includes('HAWKISH') || combinedText.includes('DOVISH') || combinedText.includes('LIQUIDITY') ||
             combinedText.includes('STIMULUS') || combinedText.includes('INJEKSI') || combinedText.includes('MARKET-MOVING') ||
             combinedText.includes('TREASURY') || combinedText.includes('BOND') || combinedText.includes('YIELD') ||
             combinedText.includes('ELECTION') || combinedText.includes('PEMILU') || combinedText.includes('SANCTION') ||
@@ -957,16 +1000,31 @@ app.get('/api/news', async (req, res) => {
             impact = 'HIGH';
           }
 
-          if (impact === 'HIGH') {
-            // Hilangkan duplikat berdasarkan kesamaan judul
-            const isDuplicate = news.some(n => n.title.toLowerCase() === title.toLowerCase());
+          // Refine to Ultra High Impact based on user criteria
+          const hasFedBoj = combinedText.includes('FED') || combinedText.includes('FOMC') || combinedText.includes('POWELL') || combinedText.includes('BOJ') || combinedText.includes('UEDA') || combinedText.includes('BANK OF JAPAN');
+          
+          const hasMacroData = (combinedText.includes('CPI') || combinedText.includes('INFLATION') || combinedText.includes('INFLASI') || combinedText.includes('UNEMPLOYMENT') || combinedText.includes('PENGANGGURAN') || combinedText.includes('NFP') || combinedText.includes('PAYROLL') || combinedText.includes('GDP') || combinedText.includes('DOMESTIK BRUTO')) && 
+                               (combinedText.includes('US ') || combinedText.includes('USA') || combinedText.includes('AS ') || combinedText.includes('JAPAN') || combinedText.includes('JEPANG') || combinedText.includes('YEN') || combinedText.includes('DOLLAR'));
+          
+          const hasGeopolitics = (combinedText.includes('WAR') || combinedText.includes('PERANG') || combinedText.includes('CONFLICT') || combinedText.includes('KONFLIK') || combinedText.includes('TENSION') || combinedText.includes('MILITARY') || combinedText.includes('ELECTION') || combinedText.includes('PEMILU') || combinedText.includes('SANCTION') || combinedText.includes('SANKSI')) &&
+                                 (combinedText.includes('ISRAEL') || combinedText.includes('IRAN') || combinedText.includes('LEBANON') || combinedText.includes('YAMAN') || combinedText.includes('YEMEN') || combinedText.includes('CHINA') || combinedText.includes('RUSIA') || combinedText.includes('RUSSIA') || combinedText.includes('UKRAINA') || combinedText.includes('UKRAINE') || combinedText.includes('TAIWAN') || combinedText.includes('TURKI') || combinedText.includes('TURKEY') || combinedText.includes('KOREA') || combinedText.includes('GULF') || combinedText.includes('TELUK') || combinedText.includes('ISRAEL') || combinedText.includes('US ') || combinedText.includes('UK '));
+          
+          const hasAI = combinedText.includes('OPENAI') || combinedText.includes('NVIDIA') || combinedText.includes('CHATGPT') || combinedText.includes('ANTHROPIC') || combinedText.includes('CLAUDE') || combinedText.includes('DEEPMIND') || combinedText.includes('GEMINI') || (combinedText.includes('AI ') && (combinedText.includes('COMPANY') || combinedText.includes('STARTUP') || combinedText.includes('MODEL') || combinedText.includes('CHIP') || combinedText.includes('GPU') || combinedText.includes('DEVELOPMENT')));
+
+          if (hasFedBoj || hasMacroData || hasGeopolitics || hasAI) {
+            impact = 'ULTRA HIGH';
+          }
+
+          if (impact === 'HIGH' || impact === 'ULTRA HIGH') {
+            const isDuplicate = parsedNews.some(n => n.title.toLowerCase() === title.toLowerCase());
             if (!isDuplicate) {
-              news.push({
+              parsedNews.push({
                 title,
                 link,
                 pubDate,
                 description,
-                impact
+                impact,
+                isPinned: false
               });
             }
           }
@@ -974,11 +1032,14 @@ app.get('/api/news', async (req, res) => {
       }
     }
 
-    // Urutkan berdasarkan tanggal publikasi terbaru
-    news.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    // Sort RSS news by date
+    parsedNews.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
-    // Ambil maksimal 12 berita agar tampilan grid penuh dan seimbang
-    news = news.slice(0, 12);
+    // Combine: Pinned news always sits at the top, followed by parsed news
+    let news = [...pinnedNews, ...parsedNews];
+
+    // Cap at 30 items for news terminal richness
+    news = news.slice(0, 30);
 
     if (news.length === 0) {
       const now = new Date();

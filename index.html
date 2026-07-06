@@ -47,6 +47,96 @@
     .transition-all-300 {
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
+
+    /* Light Mode Root Overrides */
+    body.light {
+      background-color: #f8fafc !important;
+      color: #0f172a !important;
+    }
+    body.light .mv-grid-bg {
+      background-image: 
+        linear-gradient(to right, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+    }
+    /* Background colors */
+    body.light .bg-zinc-950, 
+    body.light .bg-black {
+      background-color: #ffffff !important;
+    }
+    body.light .bg-zinc-900\/10,
+    body.light .bg-zinc-900\/20,
+    body.light .bg-zinc-900\/30,
+    body.light .bg-zinc-900\/40,
+    body.light .bg-zinc-900\/50,
+    body.light .bg-zinc-900\/80,
+    body.light .bg-zinc-900,
+    body.light .bg-zinc-950\/40,
+    body.light .bg-zinc-950\/80,
+    body.light .bg-white\/\[0.01\],
+    body.light .bg-white\/\[0.02\],
+    body.light .bg-white\/\[0.03\],
+    body.light .bg-white\/\[0.04\],
+    body.light .bg-white\/5,
+    body.light .bg-white\/10 {
+      background-color: #f1f5f9 !important;
+    }
+    body.light .bg-zinc-800 {
+      background-color: #e2e8f0 !important;
+    }
+    /* Text colors */
+    body.light .text-white,
+    body.light .text-zinc-100,
+    body.light .text-zinc-200,
+    body.light .text-zinc-300 {
+      color: #0f172a !important;
+    }
+    body.light .text-zinc-400 {
+      color: #475569 !important;
+    }
+    body.light .text-zinc-500 {
+      color: #64748b !important;
+    }
+    body.light .text-zinc-600 {
+      color: #94a3b8 !important;
+    }
+    /* Borders */
+    body.light .border-white\/5,
+    body.light .border-white\/10,
+    body.light .border-white\/20,
+    body.light .border-white\/\[0.05\],
+    body.light .border-white\/\[0.06\],
+    body.light .border-white\/\[0.08\],
+    body.light .border-white\/\[0.03\],
+    body.light .border-white\/\[0.02\],
+    body.light .border-zinc-800 {
+      border-color: #e2e8f0 !important;
+    }
+    body.light select,
+    body.light input,
+    body.light textarea {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      border-color: #cbd5e1 !important;
+    }
+    body.light select:focus,
+    body.light input:focus,
+    body.light textarea:focus {
+      border-color: #22c55e !important;
+    }
+    /* Buttons */
+    body.light .hover\:bg-white\/10:hover,
+    body.light .hover\:bg-white\/\[0.04\]:hover,
+    body.light .hover\:bg-white\/\[0.05\]:hover {
+      background-color: #cbd5e1 !important;
+    }
+    /* Modal backdrop */
+    body.light .bg-black\/80 {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+    }
+    /* Charts details in light theme */
+    body.light .bg-zinc-950\/98 {
+      background-color: rgba(255, 255, 255, 0.98) !important;
+    }
   </style>
 </head>
 <body class="relative min-h-screen overflow-x-hidden">
@@ -144,11 +234,23 @@
     ];
 
     function App() {
+      const [theme, setTheme] = useState(() => localStorage.getItem('sentinel_theme') || 'dark');
+      const [activeMainTab, setActiveMainTab] = useState('sentiment');
       const [selectedTimeframe, setSelectedTimeframe] = useState('H1');
       const [marketData, setMarketData] = useState({});
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [activeAsset, setActiveAsset] = useState(null);
+      const [customTimeframes, setCustomTimeframes] = useState({});
+
+      useEffect(() => {
+        localStorage.setItem('sentinel_theme', theme);
+        if (theme === 'light') {
+          document.body.classList.add('light');
+        } else {
+          document.body.classList.remove('light');
+        }
+      }, [theme]);
       const [serverConnected, setServerConnected] = useState(true);
       const [newsList, setNewsList] = useState([]);
       const [isNewsLoading, setIsNewsLoading] = useState(false);
@@ -197,17 +299,18 @@
 
         try {
           await Promise.all(targetAssets.map(async (asset) => {
+            const activeTf = customTimeframes[asset.id] || timeframe;
             const apiPath = asset.type === 'crypto' ? '/api/sentiment/crypto' : '/api/sentiment/forex';
-            const url = `${apiPath}?symbol=${asset.apiSymbol}&period=${timeframe}`;
+            const url = `${apiPath}?symbol=${asset.apiSymbol}&period=${activeTf}`;
             
             try {
               const res = await fetch(url);
               if (!res.ok) throw new Error(`HTTP error ${res.status}`);
               const json = await res.json();
-              newData[asset.id] = { ...asset, ...json, lastUpdated: Date.now() };
+              newData[asset.id] = { ...asset, ...json, lastUpdated: Date.now(), activeTf };
             } catch (err) {
               console.error(`Error fetching ${asset.id}:`, err.message);
-              newData[asset.id] = createMockData(asset, timeframe);
+              newData[asset.id] = { ...createMockData(asset, activeTf), activeTf };
             }
           }));
           
@@ -218,6 +321,26 @@
           setServerConnected(false);
         } finally {
           setLoading(false);
+        }
+      };
+
+      const fetchSingleAssetData = async (asset, tf) => {
+        const apiPath = asset.type === 'crypto' ? '/api/sentiment/crypto' : '/api/sentiment/forex';
+        const url = `${apiPath}?symbol=${asset.apiSymbol}&period=${tf}`;
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+          const json = await res.json();
+          setMarketData(prev => ({
+            ...prev,
+            [asset.id]: { ...asset, ...json, lastUpdated: Date.now(), activeTf: tf }
+          }));
+        } catch (err) {
+          console.error(`Error fetching single ${asset.id}:`, err.message);
+          setMarketData(prev => ({
+            ...prev,
+            [asset.id]: { ...createMockData(asset, tf), activeTf: tf }
+          }));
         }
       };
 
@@ -338,9 +461,7 @@
       ).length;
       const strongContrarians = Object.values(marketData).filter(
         a => a.buyRatio > 0.70 || a.sellRatio > 0.70
-      );
-
-      return (
+      );      return (
         <div class="relative z-10 mx-auto max-w-7xl px-4 py-8 md:px-6">
           {/* Header */}
           <header class="flex flex-col gap-4 border-b border-white/[0.08] pb-6 md:flex-row md:items-center md:justify-between">
@@ -362,238 +483,353 @@
               </p>
             </div>
 
-            {/* Timeframe Selector */}
-            <div class="flex flex-wrap items-center gap-1.5 rounded-xl border border-white/[0.08] bg-zinc-950/80 p-1.5 backdrop-blur-md self-start md:self-center">
-              {TIMEFRAMES.map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setSelectedTimeframe(tf)}
-                  class={`rounded-lg px-4 py-2 text-xs font-bold tracking-wider transition-all-300 ${
-                    selectedTimeframe === tf
-                      ? 'bg-green-500 text-black font-extrabold shadow-lg shadow-green-500/20'
-                      : 'text-zinc-400 hover:bg-white/[0.04] hover:text-white'
-                  }`}
+            {/* Timeframe Selector & Theme Switcher */}
+            <div class="flex items-center gap-3 self-start md:self-center">
+              <div class="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-zinc-950/80 p-1.5 backdrop-blur-md">
+                <span class="text-[10px] font-bold text-zinc-400 uppercase font-mono px-2">Global TF:</span>
+                <select
+                  value={selectedTimeframe}
+                  onChange={(e) => setSelectedTimeframe(e.target.value)}
+                  class="rounded-lg bg-zinc-900 border border-white/10 px-3 py-1.5 text-xs font-bold text-green-400 outline-none focus:border-green-500 font-mono cursor-pointer"
                 >
-                  {tf}
-                </button>
-              ))}
+                  {TIMEFRAMES.map(tf => (
+                    <option key={tf} value={tf} class="bg-zinc-950 text-white">{tf}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-all shadow-sm"
+                title="Toggle Light/Dark Theme"
+              >
+                {theme === 'dark' ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 text-amber-400">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 text-indigo-400">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.24c-1.25.08-2.47-.36-3.44-1.2-1.24-1.07-1.74-2.73-1.26-4.27C11.31 1 7 5.13 7 10.12c0 5.07 4.1 9.17 9.17 9.17 3.09 0 5.86-1.52 7.53-3.87a9.18 9.18 0 01-2-.18z" />
+                  </svg>
+                )}
+              </button>
             </div>
           </header>
 
-          {/* Live News Terminal Section */}
-          <section class="mt-6 rounded-2xl border border-white/5 bg-zinc-950/40 p-4 backdrop-blur-md">
-            <div class="flex items-center justify-between border-b border-white/5 pb-3">
-              <div class="flex items-center gap-2">
-                <span class="relative flex h-2.5 w-2.5">
-                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                </span>
-                <h2 class="text-xs font-bold uppercase tracking-wider text-white">Live Market-Moving News Terminal</h2>
-              </div>
-              <button 
-                onClick={fetchNews} 
-                disabled={isNewsLoading}
-                class="rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] px-2.5 py-1.5 transition-colors text-[10px] font-bold text-zinc-400 flex items-center gap-1.5 disabled:opacity-50"
-              >
-                <svg class={`h-3.5 w-3.5 ${isNewsLoading ? 'animate-spin text-green-400' : ''}`} fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89"></path>
-                </svg>
-                {isNewsLoading ? 'REFRESHING...' : 'REFRESH FEED'}
-              </button>
-            </div>
-            
-            <div class="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
-              {newsList.map((item, idx) => (
-                <div key={idx} class="rounded-xl border border-white/5 bg-zinc-900/30 p-3 hover:border-white/10 transition-colors flex flex-col justify-between">
-                  <div>
-                    <div class="flex items-center justify-between gap-2">
-                      <span class={`rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase ${
-                        item.impact === 'HIGH' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                        item.impact === 'MEDIUM' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
-                        'bg-zinc-800 text-zinc-400'
-                      }`}>
-                        {item.impact} IMPACT
-                      </span>
-                      <span class="text-[9px] text-zinc-500 font-mono">{new Date(item.pubDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                    </div>
-                    <h3 class="mt-2 text-xs font-bold text-white line-clamp-2 leading-relaxed hover:text-green-400 transition-colors">
-                      <a href={item.link} target="_blank" rel="noopener noreferrer">{item.title}</a>
-                    </h3>
-                    <p class="mt-1 text-[10px] text-zinc-400 line-clamp-2 leading-relaxed">{item.description}</p>
+          {/* Main Navigation Tabs */}
+          <div class="mt-6 flex border-b border-white/10">
+            <button
+              onClick={() => setActiveMainTab('sentiment')}
+              class={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all-300 border-b-2 ${
+                activeMainTab === 'sentiment'
+                  ? 'border-green-500 text-green-400 font-extrabold'
+                  : 'border-transparent text-zinc-400 hover:text-white'
+              }`}
+            >
+              📊 Market Sentiment
+            </button>
+            <button
+              onClick={() => setActiveMainTab('news')}
+              class={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all-300 border-b-2 ${
+                activeMainTab === 'news'
+                  ? 'border-green-500 text-green-400 font-extrabold'
+                  : 'border-transparent text-zinc-400 hover:text-white'
+              }`}
+            >
+              📰 News Terminal
+            </button>
+            <button
+              onClick={() => setActiveMainTab('calculator')}
+              class={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all-300 border-b-2 ${
+                activeMainTab === 'calculator'
+                  ? 'border-green-500 text-green-400 font-extrabold'
+                  : 'border-transparent text-zinc-400 hover:text-white'
+              }`}
+            >
+              🧮 Position & Risk Calculator
+            </button>
+          </div>
+
+          {/* CONDITIONAL MAIN TAB CONTENT */}
+          {activeMainTab === 'sentiment' && (
+            <div>
+              {/* Filtering & Asset Management Row */}
+              <section class="mt-6 flex flex-col gap-4 border-b border-white/[0.05] pb-6 lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Status</span>
+                    <select 
+                      value={activeStatusFilter} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setActiveStatusFilter(val);
+                        if (val !== 'ALL') setActiveBiasFilter('ALL');
+                      }}
+                      class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
+                    >
+                      {STATUS_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Contrarian Bias</span>
+                    <select 
+                      value={activeBiasFilter} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setActiveBiasFilter(val);
+                        if (val !== 'ALL') setActiveStatusFilter('ALL');
+                      }}
+                      class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
+                    >
+                      {BIAS_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Market State</span>
+                    <select 
+                      value={activeMarketStateFilter} 
+                      onChange={(e) => setActiveMarketStateFilter(e.target.value)}
+                      class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
+                    >
+                      {MARKET_STATE_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
 
-          {/* Filtering & Asset Management Row */}
-          <section class="mt-6 flex flex-col gap-4 border-b border-white/[0.05] pb-6 lg:flex-row lg:items-center lg:justify-between">
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Status</span>
-                <select 
-                  value={activeStatusFilter} 
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setActiveStatusFilter(val);
-                    if (val !== 'ALL') setActiveBiasFilter('ALL');
-                  }}
-                  class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
+                <button
+                  onClick={() => setShowAssetConfig(true)}
+                  class="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] text-xs font-bold text-zinc-300 px-4 py-2.5 transition-all-300 self-start lg:self-end"
                 >
-                  {STATUS_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-                </select>
-              </div>
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                  </svg>
+                  Manage Active Assets ({activeAssetsList.length}/{ALL_ASSETS.length})
+                </button>
+              </section>
 
-              <div class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Contrarian Bias</span>
-                <select 
-                  value={activeBiasFilter} 
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setActiveBiasFilter(val);
-                    if (val !== 'ALL') setActiveStatusFilter('ALL');
-                  }}
-                  class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
-                >
-                  {BIAS_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-                </select>
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Market State</span>
-                <select 
-                  value={activeMarketStateFilter} 
-                  onChange={(e) => setActiveMarketStateFilter(e.target.value)}
-                  class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
-                >
-                  {MARKET_STATE_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowAssetConfig(true)}
-              class="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] text-xs font-bold text-zinc-300 px-4 py-2.5 transition-all-300 self-start lg:self-end"
-            >
-              <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
-              </svg>
-              Manage Active Assets ({activeAssetsList.length}/{ALL_ASSETS.length})
-            </button>
-          </section>
-
-          {/* Active Assets Multi-Select Modal Dialog */}
-          {showAssetConfig && (
-            <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-              <div class="w-full max-w-xl rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8 shadow-2xl">
-                <div class="flex items-center justify-between border-b border-white/5 pb-4">
-                  <h2 class="text-xl font-bold text-white">Select Assets to Monitor</h2>
-                  <button 
-                    onClick={() => setShowAssetConfig(false)}
-                    class="text-zinc-500 hover:text-white font-mono text-xl"
-                  >
-                    ×
-                  </button>
-                </div>
-                <p class="text-xs text-zinc-400 mt-2">
-                  Pilih aset yang ingin Anda tampilkan. Aplikasi hanya akan memuat data untuk aset yang dipilih untuk menghemat kuota token & rate limit API.
-                </p>
-                
-                <div class="mt-6 max-h-[300px] overflow-y-auto pr-2 grid grid-cols-2 gap-2">
-                  {ALL_ASSETS.map(asset => {
-                    const isChecked = activeAssetsList.includes(asset.id);
-                    return (
-                      <label 
-                        key={asset.id} 
-                        class={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all-300 ${
-                          isChecked 
-                            ? 'border-green-500/30 bg-green-500/[0.04] text-white' 
-                            : 'border-white/5 bg-zinc-900/20 text-zinc-400 hover:border-white/10'
-                        }`}
+              {/* Active Assets Multi-Select Modal Dialog */}
+              {showAssetConfig && (
+                <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                  <div class="w-full max-w-xl rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8 shadow-2xl">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-4">
+                      <h2 class="text-xl font-bold text-white">Select Assets to Monitor</h2>
+                      <button 
+                        onClick={() => setShowAssetConfig(false)}
+                        class="text-zinc-500 hover:text-white font-mono text-xl"
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleAsset(asset.id)}
-                          class="rounded border-white/10 bg-zinc-900 text-green-500 focus:ring-0"
-                        />
-                        <div>
-                          <span class="block text-xs font-bold font-mono">{asset.id}</span>
-                          <span class="block text-[10px] text-zinc-500">{asset.name}</span>
+                        ×
+                      </button>
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-2">
+                      Pilih aset yang ingin Anda tampilkan. Aplikasi hanya akan memuat data untuk aset yang dipilih untuk menghemat kuota token & rate limit API.
+                    </p>
+                    
+                    <div class="mt-6 max-h-[300px] overflow-y-auto pr-2 grid grid-cols-2 gap-2">
+                      {ALL_ASSETS.map(asset => {
+                        const isChecked = activeAssetsList.includes(asset.id);
+                        return (
+                          <label 
+                            key={asset.id} 
+                            class={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all-300 ${
+                              isChecked 
+                                ? 'border-green-500/30 bg-green-500/[0.04] text-white' 
+                                : 'border-white/5 bg-zinc-900/20 text-zinc-400 hover:border-white/10'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleAsset(asset.id)}
+                              class="rounded border-white/10 bg-zinc-900 text-green-500 focus:ring-0"
+                            />
+                            <div>
+                              <span class="block text-xs font-bold font-mono">{asset.id}</span>
+                              <span class="block text-[10px] text-zinc-500">{asset.name}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div class="mt-8 flex items-center justify-end gap-3 border-t border-white/5 pt-4">
+                      <button
+                        onClick={() => setActiveAssetsList(ALL_ASSETS.map(a => a.id))}
+                        class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        onClick={() => setActiveAssetsList([])}
+                        class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
+                      >
+                        Clear All
+                      </button>
+                      <button
+                        onClick={() => setShowAssetConfig(false)}
+                        class="rounded-xl bg-green-500 hover:bg-green-400 text-black font-bold px-5 py-2.5 text-xs transition-all-300"
+                      >
+                        Save Changes
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Grid Layouts */}
+              <h2 class="mt-8 text-lg font-bold uppercase tracking-wider text-zinc-400 border-l-2 border-green-500 pl-3">
+                Cryptocurrencies (Live Exchange Sentiment)
+              </h2>
+              {filteredAssets.filter(a => a.type === 'crypto').length === 0 ? (
+                <div class="mt-6 rounded-2xl border border-white/5 bg-white/[0.01] p-10 text-center text-zinc-500 text-sm">
+                  Tidak ada aset kripto yang cocok dengan filter aktif.
+                </div>
+              ) : (
+                <div class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {filteredAssets.filter(a => a.type === 'crypto').map(asset => (
+                    <AssetCard
+                      key={asset.id}
+                      data={marketData[asset.id]}
+                      onTimeframeChange={(newTf) => {
+                        setCustomTimeframes(prev => ({ ...prev, [asset.id]: newTf }));
+                        fetchSingleAssetData(asset, newTf);
+                      }}
+                      onClick={() => setActiveAsset(marketData[asset.id])}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <h2 class="mt-14 text-lg font-bold uppercase tracking-wider text-zinc-400 border-l-2 border-orange-500 pl-3">
+                Forex & Gold (Speculative Retail Sentiment)
+              </h2>
+              {filteredAssets.filter(a => a.type === 'forex').length === 0 ? (
+                <div class="mt-6 rounded-2xl border border-white/5 bg-white/[0.01] p-10 text-center text-zinc-500 text-sm">
+                  Tidak ada aset forex/emas yang cocok dengan filter aktif.
+                </div>
+              ) : (
+                <div class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {filteredAssets.filter(a => a.type === 'forex').map(asset => (
+                    <AssetCard
+                      key={asset.id}
+                      data={marketData[asset.id]}
+                      onTimeframeChange={(newTf) => {
+                        setCustomTimeframes(prev => ({ ...prev, [asset.id]: newTf }));
+                        fetchSingleAssetData(asset, newTf);
+                      }}
+                      onClick={() => setActiveAsset(marketData[asset.id])}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Dedicated News Terminal View */}
+          {activeMainTab === 'news' && (
+            <div class="mt-6 space-y-6">
+              <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <div>
+                  <h2 class="text-xl font-bold text-white uppercase font-heading">Sentinel Live Bloomberg News Terminal</h2>
+                  <p class="text-xs text-zinc-400 mt-1">
+                    Terminal berita makroekonomi institusional. Memantau kebijakan bank sentral (Fed/BoJ), inflasi, perang global, dan inovasi AI.
+                  </p>
+                </div>
+                <button 
+                  onClick={fetchNews} 
+                  disabled={isNewsLoading}
+                  class="rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] px-4 py-2.5 transition-colors text-xs font-bold text-zinc-300 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <svg class={`h-4 w-4 ${isNewsLoading ? 'animate-spin text-green-400' : ''}`} fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89"></path>
+                  </svg>
+                  {isNewsLoading ? 'REFRESHING FEED...' : 'REFRESH NEWS FEED'}
+                </button>
+              </div>
+
+              {/* News Terminal Grid Layout */}
+              <div class="grid gap-6 md:grid-cols-[1fr_2fr]">
+                {/* Left Column: Pinned Macro Narrative News Alerts */}
+                <div class="space-y-4">
+                  <h3 class="text-xs font-extrabold uppercase tracking-widest text-zinc-400 font-mono flex items-center gap-1.5">
+                    <span class="relative flex h-2 w-2">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                    📌 Pinned Macro Narratives
+                  </h3>
+                  
+                  <div class="space-y-3">
+                    {newsList.filter(n => n.isPinned).map((item, idx) => (
+                      <div key={idx} class="rounded-2xl border border-blue-500/25 bg-blue-950/10 p-5 shadow-lg space-y-3 border-l-4 border-l-blue-500">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="rounded bg-blue-500/20 px-2 py-0.5 text-[9px] font-bold text-blue-400 uppercase font-mono tracking-wider">
+                            {item.category || 'Macro Narrative'}
+                          </span>
+                          <span class="text-[9px] text-zinc-500 font-mono">ACTIVE ALERT</span>
                         </div>
-                      </label>
-                    );
-                  })}
+                        <h4 class="text-sm font-bold text-white leading-snug">
+                          <a href={item.link} target="_blank" rel="noopener noreferrer" class="hover:text-blue-400 transition-colors">
+                            {item.title}
+                          </a>
+                        </h4>
+                        <p class="text-xs text-zinc-400 leading-relaxed font-sans">{item.description}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                <div class="mt-8 flex items-center justify-end gap-3 border-t border-white/5 pt-4">
-                  <button
-                    onClick={() => setActiveAssetsList(ALL_ASSETS.map(a => a.id))}
-                    class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    onClick={() => setActiveAssetsList([])}
-                    class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
-                  >
-                    Clear All
-                  </button>
-                  <button
-                    onClick={() => setShowAssetConfig(false)}
-                    class="rounded-xl bg-green-500 hover:bg-green-400 text-black font-bold px-5 py-2.5 text-xs transition-all-300"
-                  >
-                    Save Changes
-                  </button>
+                {/* Right Column: Live RSS High & Ultra High News List */}
+                <div class="space-y-4">
+                  <h3 class="text-xs font-extrabold uppercase tracking-widest text-zinc-400 font-mono">
+                    ⚡ Live High Impact Feed
+                  </h3>
+                  
+                  <div class="grid gap-4 sm:grid-cols-2 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
+                    {newsList.filter(n => !n.isPinned).map((item, idx) => (
+                      <div key={idx} class="rounded-2xl border border-white/5 bg-zinc-900/20 p-4 hover:border-white/10 transition-all flex flex-col justify-between space-y-3">
+                        <div>
+                          <div class="flex items-center justify-between gap-2">
+                            <span class={`rounded px-2 py-0.5 text-[8px] font-bold tracking-wider uppercase ${
+                              item.impact === 'ULTRA HIGH' 
+                                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
+                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}>
+                              {item.impact} IMPACT
+                            </span>
+                            <span class="text-[9px] text-zinc-500 font-mono">
+                              {new Date(item.pubDate).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(item.pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <h4 class="mt-2.5 text-xs font-bold text-white hover:text-green-400 transition-colors leading-relaxed">
+                            <a href={item.link} target="_blank" rel="noopener noreferrer">{item.title}</a>
+                          </h4>
+                          <p class="mt-2 text-[11px] text-zinc-400 leading-relaxed line-clamp-3">{item.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Grid Layouts */}
-          <h2 class="mt-8 text-lg font-bold uppercase tracking-wider text-zinc-400 border-l-2 border-green-500 pl-3">
-            Cryptocurrencies (Live Exchange Sentiment)
-          </h2>
-          {filteredAssets.filter(a => a.type === 'crypto').length === 0 ? (
-            <div class="mt-6 rounded-2xl border border-white/5 bg-white/[0.01] p-10 text-center text-zinc-500 text-sm">
-              Tidak ada aset kripto yang cocok dengan filter aktif.
-            </div>
-          ) : (
-            <div class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredAssets.filter(a => a.type === 'crypto').map(asset => (
-                <AssetCard
-                  key={asset.id}
-                  data={marketData[asset.id]}
-                  onClick={() => setActiveAsset(marketData[asset.id])}
-                />
-              ))}
-            </div>
-          )}
-
-          <h2 class="mt-14 text-lg font-bold uppercase tracking-wider text-zinc-400 border-l-2 border-orange-500 pl-3">
-            Forex & Gold (Speculative Retail Sentiment)
-          </h2>
-          {filteredAssets.filter(a => a.type === 'forex').length === 0 ? (
-            <div class="mt-6 rounded-2xl border border-white/5 bg-white/[0.01] p-10 text-center text-zinc-500 text-sm">
-              Tidak ada aset forex/emas yang cocok dengan filter aktif.
-            </div>
-          ) : (
-            <div class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredAssets.filter(a => a.type === 'forex').map(asset => (
-                <AssetCard
-                  key={asset.id}
-                  data={marketData[asset.id]}
-                  onClick={() => setActiveAsset(marketData[asset.id])}
-                />
-              ))}
-            </div>
+          {/* Dedicated Global Position & Risk Calculator View */}
+          {activeMainTab === 'calculator' && (
+            <PositionCalculatorPage marketData={marketData} theme={theme} />
           )}
 
           {activeAsset && (
             <DetailModal
-              asset={activeAsset}
-              timeframe={selectedTimeframe}
+              asset={marketData[activeAsset.id] || activeAsset}
+              timeframe={customTimeframes[activeAsset.id] || selectedTimeframe}
               newsList={newsList}
+              theme={theme}
+              onTimeframeChange={(newTf) => {
+                setCustomTimeframes(prev => ({ ...prev, [activeAsset.id]: newTf }));
+                fetchSingleAssetData(activeAsset, newTf);
+              }}
               onClose={() => setActiveAsset(null)}
             />
           )}
@@ -607,7 +843,7 @@
       );
     }
 
-    function AssetCard({ data, onClick }) {
+    function AssetCard({ data, onClick, onTimeframeChange }) {
       if (!data) {
         return (
           <div class="min-h-[220px] rounded-3xl border border-white/[0.05] bg-zinc-900/10 p-6 animate-pulse flex flex-col justify-between">
@@ -660,6 +896,19 @@
                 <span class="font-mono text-xs font-bold text-zinc-500 tracking-wider uppercase">
                   {data.id}
                 </span>
+                <select
+                  value={data.activeTf || 'H1'}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    onTimeframeChange(e.target.value);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  class="rounded bg-zinc-900 border border-white/10 px-1 py-0.5 text-[9px] font-bold text-green-400 outline-none focus:border-green-500 font-mono cursor-pointer"
+                >
+                  {['M1', 'M5', 'M15', 'M30', 'H1', 'H2', 'H3', 'H4', 'D1', 'W1', '1M'].map(tf => (
+                    <option key={tf} value={tf} class="bg-zinc-950 text-white">{tf}</option>
+                  ))}
+                </select>
                 <span class={`flex h-1.5 w-1.5 rounded-full ${checkMarketOpen(data.type) ? 'bg-green-500 glow-green' : 'bg-zinc-600'}`}></span>
                 <span class="text-[8px] font-bold text-zinc-500 tracking-wider">
                   {checkMarketOpen(data.type) ? 'OPEN' : 'CLOSED'}
@@ -722,23 +971,12 @@
     // ====================================================
     // Modal Component: Detailed Read & Technical Indicators
     // ====================================================
-    function DetailModal({ asset, timeframe, newsList = [], onClose }) {
+    function DetailModal({ asset, timeframe, newsList = [], theme = 'dark', onTimeframeChange, onClose }) {
       const chartContainerRef = useRef(null);
       const overlayCanvasRef = useRef(null);
       const tvChartRef = useRef(null);
       const [isFullscreen, setIsFullscreen] = useState(false);
       const [activeTab, setActiveTab] = useState('plan'); // 'plan' or 'indicators'
-      
-      const [accountSizeStr, setAccountSizeStr] = useState('');
-      const [riskValueStr, setRiskValueStr] = useState('');
-      const [rewardValueStr, setRewardValueStr] = useState('');
-      const [riskUnit, setRiskUnit] = useState('%'); // '%' or '$'
-      const [customEntryStr, setCustomEntryStr] = useState('');
-      const [customSLStr, setCustomSLStr] = useState('');
-      const [customTPStr, setCustomTPStr] = useState('');
-      const [lotsInputStr, setLotsInputStr] = useState('');
-      const [tradeDirection, setTradeDirection] = useState('BUY');
-      const [aiCalcResult, setAiCalcResult] = useState(null);
 
       const getActiveSessions = () => {
         const now = new Date();
@@ -918,30 +1156,31 @@
         container.innerHTML = '';
 
         const chartHeight = isFullscreen ? (window.innerHeight - 180) : 260;
+        const isLightTheme = theme === 'light';
         const chart = LightweightCharts.createChart(container, {
           width: container.clientWidth,
           height: chartHeight,
           layout: {
-            background: { type: 'solid', color: 'transparent' },
-            textColor: '#71717a',
+            background: { type: 'solid', color: isLightTheme ? '#ffffff' : 'transparent' },
+            textColor: isLightTheme ? '#475569' : '#71717a',
             fontSize: 10,
             fontFamily: 'JetBrains Mono, monospace',
           },
           grid: {
-            vertLines: { color: 'rgba(255,255,255,0.03)' },
-            horzLines: { color: 'rgba(255,255,255,0.03)' },
+            vertLines: { color: isLightTheme ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.03)' },
+            horzLines: { color: isLightTheme ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.03)' },
           },
           crosshair: {
             mode: LightweightCharts.CrosshairMode.Normal,
-            vertLine: { color: 'rgba(234,179,8,0.3)', labelBackgroundColor: '#18181b' },
-            horzLine: { color: 'rgba(234,179,8,0.3)', labelBackgroundColor: '#18181b' },
+            vertLine: { color: isLightTheme ? 'rgba(59,130,246,0.3)' : 'rgba(234,179,8,0.3)', labelBackgroundColor: isLightTheme ? '#cbd5e1' : '#18181b' },
+            horzLine: { color: isLightTheme ? 'rgba(59,130,246,0.3)' : 'rgba(234,179,8,0.3)', labelBackgroundColor: isLightTheme ? '#cbd5e1' : '#18181b' },
           },
           rightPriceScale: {
-            borderColor: 'rgba(255,255,255,0.06)',
-            scaleMargins: { top: 0.1, bottom: 0.1 },
+            borderColor: isLightTheme ? '#e2e8f0' : 'rgba(255,255,255,0.06)',
+            scaleMargins: { top: 0.15, bottom: 0.15 },
           },
           timeScale: {
-            borderColor: 'rgba(255,255,255,0.06)',
+            borderColor: isLightTheme ? '#e2e8f0' : 'rgba(255,255,255,0.06)',
             timeVisible: true,
             secondsVisible: false,
           },
@@ -1152,6 +1391,120 @@
             ctx.stroke();
 
             ctx.setLineDash([]);
+
+            // Harmonic Forecast Overlay (Arrow, PRZ box, SL line, TP line)
+            const hp = asset.indicators ? asset.indicators.harmonicPattern : null;
+            if (hp && hp.points && hp.points.X && hp.points.A && hp.points.D) {
+              const ptX = hp.points.X;
+              const ptA = hp.points.A;
+              const ptD = hp.points.D;
+              const patternName = hp.pattern || '';
+              
+              if (cX.x !== null && cA.x !== null && cD.x !== null && cD.y !== null) {
+                const isBullishForecast = patternName.toLowerCase().includes('bullish');
+                
+                // Calculate dynamic levels
+                const priceRange = Math.abs(ptA.price - ptX.price);
+                const przUpperPrice = isBullishForecast ? ptD.price * 1.003 : ptD.price * 1.005;
+                const przLowerPrice = isBullishForecast ? ptD.price * 0.995 : ptD.price * 0.997;
+                
+                const slPrice = isBullishForecast 
+                  ? Math.min(ptX.price, ptD.price) * 0.992 
+                  : Math.max(ptX.price, ptD.price) * 1.008;
+                  
+                const tpPrice = isBullishForecast 
+                  ? ptD.price + priceRange * 0.618 
+                  : ptD.price - priceRange * 0.618;
+                  
+                // Coordinates
+                const yUpper = candleSeries.priceToCoordinate(przUpperPrice);
+                const yLower = candleSeries.priceToCoordinate(przLowerPrice);
+                const ySL = candleSeries.priceToCoordinate(slPrice);
+                const yTP = candleSeries.priceToCoordinate(tpPrice);
+                
+                if (yUpper !== null && yLower !== null && ySL !== null && yTP !== null) {
+                  // 1. Draw Directional Arrow from Point D (cD.x, cD.y) extending right and up/down
+                  const arrowEndX = cD.x + 35;
+                  const arrowEndY = isBullishForecast ? cD.y - 25 : cD.y + 25;
+                  
+                  ctx.strokeStyle = isBullishForecast ? '#22c55e' : '#ef4444';
+                  ctx.lineWidth = 2.5;
+                  ctx.beginPath();
+                  ctx.moveTo(cD.x, cD.y);
+                  
+                  // Curved path using a quadratic curve
+                  const controlX = cD.x + 15;
+                  const controlY = cD.y;
+                  ctx.quadraticCurveTo(controlX, controlY, arrowEndX, arrowEndY);
+                  ctx.stroke();
+                  
+                  // Arrow head
+                  const angle = Math.atan2(arrowEndY - controlY, arrowEndX - controlX);
+                  ctx.fillStyle = isBullishForecast ? '#22c55e' : '#ef4444';
+                  ctx.beginPath();
+                  ctx.moveTo(arrowEndX, arrowEndY);
+                  ctx.lineTo(arrowEndX - 7 * Math.cos(angle - Math.PI / 6), arrowEndY - 7 * Math.sin(angle - Math.PI / 6));
+                  ctx.lineTo(arrowEndX - 7 * Math.cos(angle + Math.PI / 6), arrowEndY - 7 * Math.sin(angle + Math.PI / 6));
+                  ctx.closePath();
+                  ctx.fill();
+
+                  // 2. PRZ Rectangle Box (stands after the arrow, starting at cD.x + 40, width 35)
+                  const przXStart = cD.x + 40;
+                  const przWidth = 35;
+                  const przHeight = Math.abs(yUpper - yLower);
+                  const przYTop = Math.min(yUpper, yLower);
+                  
+                  ctx.strokeStyle = '#3b82f6';
+                  ctx.lineWidth = 1;
+                  ctx.setLineDash([2, 2]);
+                  ctx.strokeRect(przXStart, przYTop, przWidth, przHeight);
+                  ctx.setLineDash([]);
+                  
+                  // PRZ Text inside
+                  ctx.fillStyle = 'rgba(59, 130, 246, 0.7)';
+                  ctx.font = 'bold 9px JetBrains Mono, monospace';
+                  ctx.fillText('PRZ', przXStart + 4, przYTop + 12);
+                  
+                  // PRZ price values on top/bottom of the box
+                  ctx.fillStyle = '#60a5fa';
+                  ctx.font = '8px JetBrains Mono, monospace';
+                  ctx.fillText(przUpperPrice.toFixed(asset.price > 100 ? 2 : 5), przXStart, przYTop - 4);
+                  ctx.fillText(przLowerPrice.toFixed(asset.price > 100 ? 2 : 5), przXStart, przYTop + przHeight + 10);
+
+                  // Lines draw range from the end of the PRZ box to the right margin
+                  const linesXStart = przXStart + przWidth + 10;
+                  const linesXEnd = cD.x + 130;
+
+                  // 3. Invalidation/SL Line (horizontal red dashed line)
+                  ctx.strokeStyle = '#ef4444';
+                  ctx.lineWidth = 1.5;
+                  ctx.setLineDash([4, 4]);
+                  ctx.beginPath();
+                  ctx.moveTo(linesXStart, ySL);
+                  ctx.lineTo(linesXEnd, ySL);
+                  ctx.stroke();
+                  ctx.setLineDash([]);
+                  
+                  // SL Price Text label
+                  ctx.fillStyle = '#ef4444';
+                  ctx.font = 'bold 9px JetBrains Mono, monospace';
+                  ctx.fillText(`SL: ${slPrice.toFixed(asset.price > 100 ? 2 : 5)}`, linesXEnd + 4, ySL + 3);
+
+                  // 4. Expected Target / TP Line (horizontal light green solid line)
+                  ctx.strokeStyle = '#22c55e';
+                  ctx.lineWidth = 1.5;
+                  ctx.beginPath();
+                  ctx.moveTo(linesXStart, yTP);
+                  ctx.lineTo(linesXEnd, yTP);
+                  ctx.stroke();
+                  
+                  // TP Price Text label
+                  ctx.fillStyle = '#22c55e';
+                  ctx.font = 'bold 9px JetBrains Mono, monospace';
+                  ctx.fillText(`TP: ${tpPrice.toFixed(asset.price > 100 ? 2 : 5)}`, linesXEnd + 4, yTP + 3);
+                }
+              }
+            }
           };
 
           // Subscribe to visible range updates (both horizontal time range and vertical price range)
@@ -1185,7 +1538,7 @@
           chart.remove();
           tvChartRef.current = null;
         };
-      }, [asset, isFullscreen]);
+      }, [asset, isFullscreen, theme]);
 
       // Calculate Fibonacci-based Trade Setup
       const getTradeSetup = () => {
@@ -1230,152 +1583,6 @@
       };
 
       const setup = getTradeSetup();
-
-      const entryVal = parseFloat(customEntryStr) || 0;
-      const slVal = parseFloat(customSLStr) || 0;
-      const tpVal = parseFloat(customTPStr) || 0;
-      const accountSize = parseFloat(accountSizeStr) || 0;
-      const riskVal = parseFloat(riskValueStr) || 0;
-      const rewardVal = parseFloat(rewardValueStr) || 0;
-      const isBuy = tradeDirection === 'BUY';
-
-      const handleEntryChange = (valStr) => setCustomEntryStr(valStr);
-      const handleLotsChange = (val) => setLotsInputStr(val);
-      const handleRewardValueChange = (valStr) => setRewardValueStr(valStr);
-      const handleRiskValueChange = (valStr) => setRiskValueStr(valStr);
-      const handleDirectionChange = (newDir) => setTradeDirection(newDir);
-      const handleTPChange = (valStr) => setCustomTPStr(valStr);
-      const handleSLChange = (valStr) => setCustomSLStr(valStr);
-
-      const calculateAiRecommendation = () => {
-        const balance = parseFloat(accountSizeStr) || 0;
-        const risk = parseFloat(riskValueStr) || 0;
-        const reward = parseFloat(rewardValueStr) || 0;
-        const entry = parseFloat(customEntryStr) || 0;
-        const sl = parseFloat(customSLStr) || 0;
-        const tp = parseFloat(customTPStr) || 0;
-        const lots = parseFloat(lotsInputStr) || 0;
-        const isBuyMode = tradeDirection === 'BUY';
-
-        let recSL = sl;
-        let recTP = tp;
-        let recLots = lots;
-        let recRR = '';
-        let safetyRating = 'AMAT AMAN';
-        let safetyColor = 'text-green-400';
-        let adviceList = [];
-        let logs = [];
-
-        // 1. Evaluate Direction & Entry
-        if (entry <= 0) {
-          adviceList.push("Silakan isi Entry Price (Langkah 6) agar AI dapat menganalisis level penempatan stop loss dan target keuntungan.");
-        } else {
-          logs.push(`Entri Posisi: ${tradeDirection} di harga ${entry.toLocaleString()}`);
-        }
-
-        // 2. Stop Loss (Step 7) & Take Profit (Step 8) calculations
-        if (entry > 0) {
-          if (!sl || sl <= 0) {
-            const fib = asset.indicators ? asset.indicators.fibonacci : null;
-            if (fib && fib.levels) {
-              recSL = isBuyMode ? fib.levels['0.786'] * 0.998 : fib.levels['0.786'] * 1.002;
-              logs.push(`Stop Loss tidak diisi. Rekomendasi SL Teknis (Fibonacci 0.786): ${recSL.toFixed(asset.price > 100 ? 2 : 4)}`);
-            } else {
-              const atr = entry * 0.012;
-              recSL = isBuyMode ? (entry - atr) : (entry + atr);
-              logs.push(`Stop Loss tidak diisi. Rekomendasi SL Teknis (1.2% ATR): ${recSL.toFixed(asset.price > 100 ? 2 : 4)}`);
-            }
-          }
-
-          if (!tp || tp <= 0) {
-            const diffSL = Math.abs(entry - recSL);
-            const computedRR = (reward > 0 && risk > 0) ? (reward / risk) : 2.0; // Default R:R 1:2
-            const diffTP = diffSL * computedRR;
-            recTP = isBuyMode ? (entry + diffTP) : (entry - diffTP);
-            logs.push(`Take Profit tidak diisi. Rekomendasi TP (berdasarkan target R:R 1:${computedRR.toFixed(1)}): ${recTP.toFixed(asset.price > 100 ? 2 : 4)}`);
-          }
-
-          const actualDiffSL = Math.abs(entry - recSL);
-          const actualDiffTP = Math.abs(recTP - entry);
-          if (actualDiffSL > 0) {
-            const rrRatio = actualDiffTP / actualDiffSL;
-            recRR = `1 : ${rrRatio.toFixed(2)}`;
-            if (rrRatio < 1.5) {
-              adviceList.push("Rasio Risk-to-Reward Anda terlalu rendah (di bawah 1:1.5). Disarankan melebarkan jarak TP atau mempersempit jarak SL.");
-            } else {
-              logs.push(`Rasio Risk-to-Reward Realisasi: ${recRR} (Sangat Sehat ✓)`);
-            }
-          }
-        }
-
-        // 3. Balance, Risk, and Lots suggestion
-        if (balance > 0 && risk > 0 && entry > 0) {
-          const riskAmountUSD = riskUnit === '%' ? (balance * (risk / 100)) : risk;
-          const diffSL = Math.abs(entry - recSL);
-          
-          if (diffSL > 0) {
-            const calculatedUnits = riskAmountUSD / diffSL;
-            let computedLots = calculatedUnits;
-            if (asset.type === 'forex') {
-              computedLots = asset.id === 'XAU' ? (calculatedUnits / 100) : (calculatedUnits / 100000);
-            }
-            recLots = parseFloat(computedLots.toFixed(3));
-            logs.push(`Rekomendasi Lots agar sesuai batasan risiko: ${recLots} ${asset.type === 'forex' ? 'Lots' : 'Coins'}`);
-          }
-        }
-
-        // 4. Safety & Leverage evaluation
-        let calculatedRiskUSD = 0;
-        let calculatedRiskPct = 0;
-        if (entry > 0 && recSL > 0 && lots > 0) {
-          const diffSL = Math.abs(entry - recSL);
-          let units = lots;
-          if (asset.type === 'forex') {
-            units = lots * (asset.id === 'XAU' ? 100 : 100000);
-          }
-          calculatedRiskUSD = units * diffSL;
-          if (balance > 0) {
-            calculatedRiskPct = (calculatedRiskUSD / balance) * 100;
-            logs.push(`Risiko Nyata (Lots manual Anda): $${calculatedRiskUSD.toFixed(2)} (${calculatedRiskPct.toFixed(2)}% dari saldo).`);
-            
-            if (calculatedRiskPct > 5) {
-              safetyRating = 'SANGAT BERBAHAYA';
-              safetyColor = 'text-red-400 animate-pulse';
-              adviceList.push("Risiko posisi melebihi 5% saldo akun. Ini melanggar money management bursa HFM. Kurangi ukuran Lot atau sesuaikan SL!");
-            } else if (calculatedRiskPct > 2) {
-              safetyRating = 'MODERAT / AGRESIF';
-              safetyColor = 'text-orange-400';
-              adviceList.push("Risiko berada di kisaran moderat (2-5%). Harap pastikan analisis teknikal bursa H1/H4 mendukung.");
-            }
-          }
-        }
-
-        if (adviceList.length === 0) {
-          adviceList.push("Struktur manajemen posisi Anda sangat bagus dan aman sesuai standar trading institusional.");
-        }
-
-        setAiCalcResult({
-          recSL: recSL.toFixed(asset.price > 100 ? 2 : 4),
-          recTP: recTP.toFixed(asset.price > 100 ? 2 : 4),
-          recLots: recLots > 0 ? recLots.toFixed(3) : 'Belum ditentukan',
-          rr: recRR || 'Belum dihitung',
-          safetyRating,
-          safetyColor,
-          advice: adviceList.join(" "),
-          logs
-        });
-      };
-
-      const clearAiRecommendation = () => {
-        setAccountSizeStr('');
-        setRiskValueStr('');
-        setRewardValueStr('');
-        setCustomEntryStr('');
-        setCustomSLStr('');
-        setCustomTPStr('');
-        setLotsInputStr('');
-        setAiCalcResult(null);
-      };
       const longPct = (asset.buyRatio * 100).toFixed(1);
       const shortPct = (asset.sellRatio * 100).toFixed(1);
 
@@ -1392,9 +1599,18 @@
 
             <div>
               <div class="flex items-center gap-2">
-                <span class="rounded-full bg-zinc-800 px-2.5 py-0.5 text-[10px] font-bold text-zinc-400 uppercase font-mono">
-                  {asset.id} / Timeframe {timeframe}
-                </span>
+                <div class="flex items-center gap-1.5 rounded-full bg-zinc-800 px-2.5 py-0.5 text-[10px] font-bold text-zinc-400 uppercase font-mono">
+                  <span>{asset.id} / TF:</span>
+                  <select
+                    value={timeframe}
+                    onChange={(e) => onTimeframeChange(e.target.value)}
+                    class="bg-transparent border-none p-0 text-[10px] font-bold text-green-400 outline-none focus:ring-0 font-mono cursor-pointer"
+                  >
+                    {['M1', 'M5', 'M15', 'M30', 'H1', 'H2', 'H3', 'H4', 'D1', 'W1', '1M'].map(tf => (
+                      <option key={tf} value={tf} class="bg-zinc-950 text-white">{tf}</option>
+                    ))}
+                  </select>
+                </div>
                 <span class={`flex h-1.5 w-1.5 rounded-full ${checkMarketOpen(asset.type) ? 'bg-green-500 glow-green' : 'bg-zinc-600'}`}></span>
                 <span class="text-[9px] font-bold text-zinc-500 tracking-wider">
                   {checkMarketOpen(asset.type) ? 'MARKET OPEN' : 'MARKET CLOSED'}
@@ -1776,200 +1992,7 @@
                   <TrendFollowingPlaybook asset={asset} />
                 </div>
 
-                {/* Interactive Position Calculator */}
-                <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-5 mt-4">
-                    <h4 class="text-xs font-bold uppercase tracking-wider text-green-400 font-heading">Position & Risk Calculator</h4>
-                    <p class="text-[10px] text-zinc-500 mt-1 leading-relaxed">
-                      Isi kolom manual (Langkah 1-9) sesuai keinginan Anda. Klik tombol Aktivasi di bawah untuk mendapatkan rekomendasi Stop Loss/Take Profit dan penaksiran risiko bursa HFM dari Antigravity AI.
-                    </p>
-
-                    {/* Trade Direction Toggle */}
-                    <div class="mt-4">
-                      <label class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">1. Trade Direction (BUY / SELL)</label>
-                      <div class="mt-1 flex rounded-xl bg-zinc-900 p-1 border border-white/5 font-mono text-xs overflow-hidden">
-                        <button 
-                          onClick={() => handleDirectionChange('BUY')}
-                          class={`w-1/2 py-2 rounded-lg font-bold transition-all ${
-                            tradeDirection === 'BUY' ? 'bg-green-500 text-black shadow-lg shadow-green-500/20' : 'text-zinc-400 hover:text-zinc-200'
-                          }`}
-                        >
-                          ▲ BUY LONG
-                        </button>
-                        <button 
-                          onClick={() => handleDirectionChange('SELL')}
-                          class={`w-1/2 py-2 rounded-lg font-bold transition-all ${
-                            tradeDirection === 'SELL' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-zinc-400 hover:text-zinc-200'
-                          }`}
-                        >
-                          ▼ SELL SHORT
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="mt-4 grid grid-cols-2 gap-3">
-                      <div>
-                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">2. Account Balance ($)</label>
-                        <input 
-                          type="text" 
-                          value={accountSizeStr}
-                          onChange={(e) => setAccountSizeStr(e.target.value)}
-                          placeholder="saldo..."
-                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-green-500"
-                        />
-                      </div>
-                      <div class="flex flex-col justify-end">
-                        <div class="flex items-center justify-between h-8 bg-zinc-900/30 px-3 rounded-lg border border-white/5">
-                          <span class="text-[9px] uppercase text-zinc-500 font-mono font-bold">3. Risk/Reward Unit</span>
-                          <div class="flex rounded-md bg-zinc-900 p-0.5 border border-white/5">
-                            <button 
-                              onClick={() => setRiskUnit('%')}
-                              class={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
-                                riskUnit === '%' ? 'bg-green-500 text-black' : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              %
-                            </button>
-                            <button 
-                              onClick={() => setRiskUnit('$')}
-                              class={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
-                                riskUnit === '$' ? 'bg-green-500 text-black' : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              $
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">4. Risk {riskUnit === '%' ? '(%)' : '($)'}</label>
-                        <input 
-                          type="text" 
-                          value={riskValueStr}
-                          onChange={(e) => handleRiskValueChange(e.target.value)}
-                          placeholder="nilai resiko..."
-                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-green-500"
-                        />
-                      </div>
-                      <div>
-                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">5. Reward {riskUnit === '%' ? '(%)' : '($)'}</label>
-                        <input 
-                          type="text" 
-                          value={rewardValueStr}
-                          onChange={(e) => handleRewardValueChange(e.target.value)}
-                          placeholder="target profit..."
-                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-green-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div class="mt-3 grid grid-cols-3 gap-2">
-                      <div>
-                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">6. Entry Price</label>
-                        <input 
-                          type="text" 
-                          value={customEntryStr}
-                          onChange={(e) => handleEntryChange(e.target.value)}
-                          placeholder="harga..."
-                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white font-mono outline-none focus:border-green-500"
-                        />
-                      </div>
-                      <div>
-                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">7. Stop Loss (SL)</label>
-                        <input 
-                          type="text" 
-                          value={customSLStr}
-                          onChange={(e) => handleSLChange(e.target.value)}
-                          placeholder="sl..."
-                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-red-400 font-mono outline-none focus:border-green-500"
-                        />
-                      </div>
-                      <div>
-                        <label class="block text-[9px] uppercase text-zinc-500 font-mono">8. Take Profit (TP)</label>
-                        <input 
-                          type="text" 
-                          value={customTPStr}
-                          onChange={(e) => handleTPChange(e.target.value)}
-                          placeholder="tp..."
-                          class="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-green-400 font-mono outline-none focus:border-green-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div class="mt-3">
-                      <label class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">
-                        {asset.type === 'forex' ? (asset.id === 'XAU' ? '9. Lots (100 Oz/Lot)' : '9. Lots (100k/Lot)') : '9. Coins / Contracts / Lots'}
-                      </label>
-                      <input 
-                        type="text" 
-                        value={lotsInputStr}
-                        onChange={(e) => handleLotsChange(e.target.value)}
-                        placeholder="Lot size..."
-                        class="mt-1 w-full rounded-lg border border-green-500/30 bg-green-500/[0.02] px-3 py-1.5 text-xs font-bold text-green-400 outline-none focus:border-green-400"
-                      />
-                    </div>
-
-                    {/* Activation Buttons */}
-                    <div class="mt-5 flex gap-3">
-                      <button 
-                        onClick={calculateAiRecommendation}
-                        class="flex-1 rounded-xl bg-violet-600 hover:bg-violet-500 font-bold px-4 py-3 text-xs text-white transition-all shadow-lg shadow-violet-500/20 border border-violet-500/30 flex items-center justify-center gap-1.5"
-                      >
-                        ✦ AKTIFKAN REKOMENDASI AI
-                      </button>
-                      <button 
-                        onClick={clearAiRecommendation}
-                        class="rounded-xl bg-zinc-800 hover:bg-zinc-750 font-bold px-4 py-3 text-xs text-zinc-400 transition-colors border border-white/5"
-                      >
-                        RESET / CLEAR
-                      </button>
-                    </div>
-
-                    {/* Antigravity AI Recommendation Result Box */}
-                    {aiCalcResult && (
-                      <div class="mt-4 rounded-xl border border-violet-500/20 bg-violet-950/10 p-4 space-y-3 font-mono text-xs shadow-inner">
-                        <div class="flex items-center justify-between border-b border-white/5 pb-2">
-                          <span class="text-violet-400 font-bold">✦ ANTIGRAVITY AI METRICS</span>
-                          <span class={`rounded-full px-2 py-0.5 text-[10px] font-bold ${aiCalcResult.safetyColor}`}>
-                            {aiCalcResult.safetyRating}
-                          </span>
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-2 text-[11px] text-zinc-300">
-                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
-                            <span class="text-zinc-500">Saran SL:</span>
-                            <span class="text-red-400 font-bold">{aiCalcResult.recSL}</span>
-                          </div>
-                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
-                            <span class="text-zinc-500">Saran TP:</span>
-                            <span class="text-green-400 font-bold">{aiCalcResult.recTP}</span>
-                          </div>
-                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
-                            <span class="text-zinc-500">Saran Lots:</span>
-                            <span class="text-white font-bold">{aiCalcResult.recLots}</span>
-                          </div>
-                          <div class="flex justify-between border-b border-white/[0.03] pb-1.5">
-                            <span class="text-zinc-500">R:R Ratio:</span>
-                            <span class="text-violet-400 font-bold">{aiCalcResult.rr}</span>
-                          </div>
-                        </div>
-
-                        <div class="mt-2 text-[11px] text-zinc-400 border-t border-white/5 pt-2">
-                          <span class="block text-[9px] uppercase font-bold text-violet-400">Jejak Kalkulasi AI:</span>
-                          <ul class="mt-1 list-disc pl-4 space-y-1 text-[10px] text-zinc-400 leading-normal">
-                            {aiCalcResult.logs.map((log, lIdx) => <li key={lIdx}>{log}</li>)}
-                          </ul>
-                        </div>
-
-                        <div class="mt-2 bg-violet-950/20 p-2.5 rounded-lg border border-violet-500/10 text-[11px] text-zinc-200 leading-relaxed italic">
-                          <strong>Evaluasi AI:</strong> {aiCalcResult.advice}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+              </div>
               </div>
 
             {/* Modal Footer */}
@@ -1985,6 +2008,432 @@
 
           </div>
         </div>
+      );
+    }
+
+    // ====================================================
+    // Dedicated Position & Risk Calculator Component
+    // ====================================================
+    function PositionCalculatorPage({ marketData, theme }) {
+      const [selectedAssetId, setSelectedAssetId] = useState('BTC');
+      const [tradeDirection, setTradeDirection] = useState('BUY');
+      const [accountSizeStr, setAccountSizeStr] = useState('10000');
+      const [riskValueStr, setRiskValueStr] = useState('1');
+      const [rewardValueStr, setRewardValueStr] = useState('2');
+      const [riskUnit, setRiskUnit] = useState('%');
+      const [customEntryStr, setCustomEntryStr] = useState('');
+      const [customSLStr, setCustomSLStr] = useState('');
+      const [customTPStr, setCustomTPStr] = useState('');
+      const [expectedProfitStr, setExpectedProfitStr] = useState('');
+      const [lotsInputStr, setLotsInputStr] = useState('');
+      const [aiCalcResult, setAiCalcResult] = useState(null);
+
+      const activeAsset = ALL_ASSETS.find(a => a.id === selectedAssetId) || ALL_ASSETS[0];
+      const liveAssetData = marketData[selectedAssetId];
+
+      useEffect(() => {
+        if (liveAssetData && liveAssetData.price) {
+          setCustomEntryStr(liveAssetData.price.toString());
+          const isBuy = tradeDirection === 'BUY';
+          const entry = liveAssetData.price;
+          const fib = liveAssetData.indicators ? liveAssetData.indicators.fibonacci : null;
+          if (fib && fib.levels) {
+            setCustomSLStr(isBuy ? (fib.levels['0.786'] * 0.998).toFixed(entry > 100 ? 2 : 5) : (fib.levels['0.786'] * 1.002).toFixed(entry > 100 ? 2 : 5));
+            setCustomTPStr(isBuy ? (fib.levels['0.236'] * 1.002).toFixed(entry > 100 ? 2 : 5) : (fib.levels['0.236'] * 0.998).toFixed(entry > 100 ? 2 : 5));
+          } else {
+            setCustomSLStr(isBuy ? (entry * 0.99).toFixed(entry > 100 ? 2 : 5) : (entry * 1.01).toFixed(entry > 100 ? 2 : 5));
+            setCustomTPStr(isBuy ? (entry * 1.02).toFixed(entry > 100 ? 2 : 5) : (entry * 0.98).toFixed(entry > 100 ? 2 : 5));
+          }
+        }
+      }, [selectedAssetId]);
+
+      const calculateAiRecommendation = () => {
+        const balance = parseFloat(accountSizeStr) || 0;
+        const risk = parseFloat(riskValueStr) || 0;
+        const reward = parseFloat(rewardValueStr) || 0;
+        const entry = parseFloat(customEntryStr) || 0;
+        const sl = parseFloat(customSLStr) || 0;
+        const tp = parseFloat(customTPStr) || 0;
+        const lots = parseFloat(lotsInputStr) || 0;
+        const expProfit = parseFloat(expectedProfitStr) || 0;
+        const isBuyMode = tradeDirection === 'BUY';
+
+        let recSL = sl;
+        let recTP = tp;
+        let recLots = lots;
+        let recRR = '';
+        let safetyRating = 'AMAT AMAN';
+        let safetyColor = 'text-green-400';
+        let adviceList = [];
+        let logs = [];
+
+        if (entry <= 0) {
+          setAiCalcResult({
+            recSL: 'N/A', recTP: 'N/A', recLots: 'N/A', rr: 'N/A',
+            safetyRating: 'INVALID', safetyColor: 'text-red-400',
+            advice: 'Silakan masukkan Entry Price untuk memulai kalkulasi AI.',
+            logs: ['Error: Entry Price tidak boleh kosong.']
+          });
+          return;
+        }
+
+        logs.push(`Analisis Sizing: ${activeAsset.name} (${activeAsset.id})`);
+        logs.push(`Arah Posisi: ${tradeDirection} di harga ${entry.toLocaleString()}`);
+
+        if (balance > 0) {
+          logs.push(`Saldo Akun Aktif: $${balance.toLocaleString()}`);
+        }
+
+        if (sl <= 0) {
+          recSL = isBuyMode ? entry * 0.99 : entry * 1.01;
+          adviceList.push("Stop Loss Anda kosong. AI mematok default 1.0% dari harga entri.");
+        }
+        if (tp <= 0) {
+          recTP = isBuyMode ? entry * 1.02 : entry * 0.98;
+          adviceList.push("Take Profit Anda kosong. AI mematok default 2.0% dari harga entri.");
+        }
+
+        const slDistance = Math.abs(entry - recSL);
+        const tpDistance = Math.abs(recTP - entry);
+
+        if (slDistance > 0) {
+          const rr = tpDistance / slDistance;
+          recRR = `1 : ${rr.toFixed(2)}`;
+          logs.push(`Rasio Risk to Reward: ${recRR}`);
+          if (rr < 1.5) {
+            safetyRating = 'MODERAT / KURANG IDEAL';
+            safetyColor = 'text-orange-400';
+            adviceList.push("Rasio Risk-to-Reward berada di bawah 1:1.5. Disarankan melebarkan jarak TP.");
+          }
+        }
+
+        if (expProfit > 0) {
+          logs.push(`Expected Profit manual: $${expProfit.toLocaleString()}`);
+          if (balance > 0) {
+            const expPct = (expProfit / balance) * 100;
+            logs.push(`Rencana Keuntungan: ${expPct.toFixed(2)}% dari modal`);
+            if (expPct > 15) {
+              adviceList.push("PERINGATAN: Target keuntungan Anda sangat agresif (> 15% modal). Pastikan leverage dan margin aman.");
+            }
+          }
+        }
+
+        if (liveAssetData) {
+          const longPct = (liveAssetData.buyRatio * 100).toFixed(1);
+          const shortPct = (liveAssetData.sellRatio * 100).toFixed(1);
+          logs.push(`Live Sentimen: ${longPct}% Long vs ${shortPct}% Short`);
+
+          if (liveAssetData.status === 'TRAPPED_LONG' && tradeDirection === 'BUY') {
+            safetyRating = 'BERBAHAYA / HIGH RISK';
+            safetyColor = 'text-red-500 animate-pulse';
+            adviceList.push("PERINGATAN CONTRARIAN: Retail terperangkap Long di dasar. Smart money cenderung menyapu stop loss ke bawah. Menempatkan BUY saat ini beresiko tinggi.");
+          } else if (liveAssetData.status === 'TRAPPED_SHORT' && tradeDirection === 'SELL') {
+            safetyRating = 'BERBAHAYA / HIGH RISK';
+            safetyColor = 'text-red-500 animate-pulse';
+            adviceList.push("PERINGATAN CONTRARIAN: Retail terperangkap Short di pucuk. Tekanan likuiditas cenderung memicu squeeze ke atas. Menempatkan SELL beresiko terlikuidasi.");
+          }
+        }
+
+        if (balance > 0 && risk > 0 && slDistance > 0) {
+          const riskUSD = riskUnit === '%' ? (balance * (risk / 100)) : risk;
+          if (activeAsset.type === 'forex') {
+            const contractSize = activeAsset.id === 'XAU' ? 100 : 100000;
+            let lotVal = riskUSD / (slDistance * contractSize);
+            if (activeAsset.id === 'USDJPY') {
+              lotVal = (riskUSD * 158.0) / (slDistance * contractSize);
+            }
+            recLots = lotVal;
+            logs.push(`Lots Forex/Emas yang disarankan: ${recLots.toFixed(3)} Lots`);
+          } else {
+            recLots = riskUSD / slDistance;
+            logs.push(`Kontrak Kripto yang disarankan: ${recLots.toFixed(3)} Koin`);
+          }
+        }
+
+        if (lots > 0 && balance > 0) {
+          let calculatedRiskUSD = lots * slDistance;
+          if (activeAsset.type === 'forex') {
+            const contractSize = activeAsset.id === 'XAU' ? 100 : 100000;
+            calculatedRiskUSD = lots * slDistance * contractSize;
+          }
+          const riskPct = (calculatedRiskUSD / balance) * 100;
+          logs.push(`Risiko Nyata (Lots manual): $${calculatedRiskUSD.toFixed(2)} (${riskPct.toFixed(2)}% dari saldo)`);
+          if (riskPct > 5) {
+            safetyRating = 'SANGAT AGRESIF / BERBAHAYA';
+            safetyColor = 'text-red-500 animate-pulse';
+            adviceList.push("WARNING: Lot yang dimasukkan manual menyebabkan risiko saldo akun melebihi 5%! Kurangi ukuran lot.");
+          }
+        }
+
+        if (adviceList.length === 0) {
+          adviceList.push("Manajemen posisi dan risiko Anda sangat aman dan logis berdasarkan kondisi pasar saat ini.");
+        }
+
+        setAiCalcResult({
+          recSL: recSL.toFixed(entry > 100 ? 2 : 5),
+          recTP: recTP.toFixed(entry > 100 ? 2 : 5),
+          recLots: recLots > 0 ? recLots.toFixed(3) : 'Belum ditentukan',
+          rr: recRR || 'Belum dihitung',
+          safetyRating,
+          safetyColor,
+          advice: adviceList.join(" "),
+          logs
+        });
+      };
+
+      const clearAiRecommendation = () => {
+        setAccountSizeStr('10000');
+        setRiskValueStr('1');
+        setRewardValueStr('2');
+        setCustomEntryStr('');
+        setCustomSLStr('');
+        setCustomTPStr('');
+        setExpectedProfitStr('');
+        setLotsInputStr('');
+        setAiCalcResult(null);
+      };
+
+      return (
+        <section class="mt-8 rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8 shadow-2xl">
+          <div class="border-b border-white/5 pb-4">
+            <h2 class="text-xl font-bold text-white uppercase font-heading">Global Position & Risk Calculator</h2>
+            <p class="text-xs text-zinc-400 mt-1">
+              Kalkulator manajemen posisi multi-aset mandiri. Pilih aset Anda, isi parameter transaksi, dan aktifkan asisten asessment Antigravity AI.
+            </p>
+          </div>
+
+          <div class="mt-6 grid gap-6 md:grid-cols-[1fr_1fr]">
+            {/* Left Column: Form Inputs */}
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">1. Pilih Aset Bursa</label>
+                <select
+                  value={selectedAssetId}
+                  onChange={(e) => setSelectedAssetId(e.target.value)}
+                  class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-xs font-bold text-white outline-none focus:border-green-500 cursor-pointer"
+                >
+                  {ALL_ASSETS.map(asset => (
+                    <option key={asset.id} value={asset.id} class="bg-zinc-950 text-white">
+                      [{asset.type.toUpperCase()}] {asset.id} - {asset.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">2. Arah Transaksi (Trade Direction)</label>
+                <div class="mt-1.5 flex rounded-xl bg-zinc-900 p-1 border border-white/5 font-mono text-xs overflow-hidden font-bold">
+                  <button
+                    onClick={() => setTradeDirection('BUY')}
+                    class={`w-1/2 py-2.5 rounded-lg font-bold transition-all ${
+                      tradeDirection === 'BUY' ? 'bg-green-500 text-black shadow-lg shadow-green-500/20' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    ▲ BUY LONG
+                  </button>
+                  <button
+                    onClick={() => setTradeDirection('SELL')}
+                    class={`w-1/2 py-2.5 rounded-lg font-bold transition-all ${
+                      tradeDirection === 'SELL' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    ▼ SELL SHORT
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">3. Saldo Akun / Account Balance ($)</label>
+                  <input
+                    type="text"
+                    value={accountSizeStr}
+                    onChange={(e) => setAccountSizeStr(e.target.value)}
+                    placeholder="misal: 10000"
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">4. Unit Resiko / Target</label>
+                  <div class="mt-1 flex h-[38px] items-center justify-between bg-zinc-900 px-4 rounded-xl border border-white/10">
+                    <span class="text-[10px] uppercase text-zinc-500 font-mono font-bold">Tipe Unit:</span>
+                    <div class="flex rounded-lg bg-zinc-950 p-0.5 border border-white/5">
+                      <button
+                        onClick={() => setRiskUnit('%')}
+                        class={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
+                          riskUnit === '%' ? 'bg-green-500 text-black font-extrabold' : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        %
+                      </button>
+                      <button
+                        onClick={() => setRiskUnit('$')}
+                        class={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${
+                          riskUnit === '$' ? 'bg-green-500 text-black font-extrabold' : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        $
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">5. Resiko yang Diterima ({riskUnit})</label>
+                  <input
+                    type="text"
+                    value={riskValueStr}
+                    onChange={(e) => setRiskValueStr(e.target.value)}
+                    placeholder="misal: 1 atau 100..."
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">6. Target Reward ({riskUnit})</label>
+                  <input
+                    type="text"
+                    value={rewardValueStr}
+                    onChange={(e) => setRewardValueStr(e.target.value)}
+                    placeholder="misal: 2 atau 200..."
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">7. Entry Price</label>
+                  <input
+                    type="text"
+                    value={customEntryStr}
+                    onChange={(e) => setCustomEntryStr(e.target.value)}
+                    placeholder="harga..."
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white font-mono outline-none focus:border-green-500"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">8. Stop Loss (SL)</label>
+                  <input
+                    type="text"
+                    value={customSLStr}
+                    onChange={(e) => setCustomSLStr(e.target.value)}
+                    placeholder="sl..."
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-red-400 font-mono outline-none focus:border-green-500"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">9. Take Profit (TP)</label>
+                  <input
+                    type="text"
+                    value={customTPStr}
+                    onChange={(e) => setCustomTPStr(e.target.value)}
+                    placeholder="tp..."
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-green-400 font-mono outline-none focus:border-green-500"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">10. Expected Profit ({riskUnit})</label>
+                  <input
+                    type="text"
+                    value={expectedProfitStr}
+                    onChange={(e) => setExpectedProfitStr(e.target.value)}
+                    placeholder="pengisian manual..."
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold uppercase text-zinc-400 font-mono">11. Lots Size / Coins (Manual)</label>
+                  <input
+                    type="text"
+                    value={lotsInputStr}
+                    onChange={(e) => setLotsInputStr(e.target.value)}
+                    placeholder="misal: 0.1 atau 2.5..."
+                    class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white outline-none focus:border-green-500"
+                  />
+                </div>
+              </div>
+
+              <div class="flex gap-4 pt-2">
+                <button
+                  onClick={calculateAiRecommendation}
+                  class="flex-1 rounded-xl bg-violet-600 hover:bg-violet-500 font-bold px-4 py-3 text-xs text-white transition-all shadow-lg shadow-violet-500/20 border border-violet-500/30 flex items-center justify-center gap-1.5"
+                >
+                  ✦ AKTIFKAN REKOMENDASI AI
+                </button>
+                <button
+                  onClick={clearAiRecommendation}
+                  class="rounded-xl bg-zinc-800 hover:bg-zinc-750 font-bold px-4 py-3 text-xs text-zinc-400 transition-colors border border-white/5"
+                >
+                  RESET
+                </button>
+              </div>
+            </div>
+
+            {/* Right Column: AI Analysis Result Output */}
+            <div>
+              <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-5 h-full flex flex-col justify-between">
+                <div>
+                  <h4 class="text-xs font-bold uppercase tracking-wider text-zinc-400 font-heading">Antigravity AI Assessment & Results</h4>
+                  <p class="text-[10px] text-zinc-500 mt-1 leading-relaxed">
+                    Hasil analisis komparatif instan dari asisten AI bursa akan ditampilkan di bawah ini setelah Anda mengklik tombol rekomendasi.
+                  </p>
+
+                  {aiCalcResult ? (
+                    <div class="mt-6 space-y-4 font-mono text-xs">
+                      <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                        <span class="text-violet-400 font-bold">✦ AI RISK RATING</span>
+                        <span class={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${aiCalcResult.safetyColor}`}>
+                          {aiCalcResult.safetyRating}
+                        </span>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-4 text-zinc-300">
+                        <div class="border-b border-white/[0.03] pb-2">
+                          <span class="text-zinc-500 block text-[9px] uppercase">Rekomendasi SL:</span>
+                          <span class="text-red-400 font-bold text-sm">{aiCalcResult.recSL}</span>
+                        </div>
+                        <div class="border-b border-white/[0.03] pb-2">
+                          <span class="text-zinc-500 block text-[9px] uppercase">Rekomendasi TP:</span>
+                          <span class="text-green-400 font-bold text-sm">{aiCalcResult.recTP}</span>
+                        </div>
+                        <div class="border-b border-white/[0.03] pb-2">
+                          <span class="text-zinc-500 block text-[9px] uppercase">Lots / Kontrak Sizing:</span>
+                          <span class="text-white font-bold text-sm">{aiCalcResult.recLots}</span>
+                        </div>
+                        <div class="border-b border-white/[0.03] pb-2">
+                          <span class="text-zinc-500 block text-[9px] uppercase">R:R Ratio:</span>
+                          <span class="text-violet-400 font-bold text-sm">{aiCalcResult.rr}</span>
+                        </div>
+                      </div>
+
+                      <div class="border-t border-white/5 pt-3">
+                        <span class="block text-[9px] uppercase font-bold text-violet-400 mb-1">Rincian Perhitungan AI:</span>
+                        <ul class="list-disc pl-4 space-y-1 text-[10px] text-zinc-400 leading-relaxed">
+                          {aiCalcResult.logs.map((log, idx) => <li key={idx}>{log}</li>)}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : (
+                    <div class="mt-20 text-center text-zinc-600 text-xs py-10">
+                      Belum ada kalkulasi yang aktif. Masukkan data di kolom kiri dan tekan tombol untuk memulai.
+                    </div>
+                  )}
+                </div>
+
+                {aiCalcResult && (
+                  <div class="mt-6 rounded-xl border border-violet-500/10 bg-violet-950/10 p-4 text-xs text-zinc-200 leading-relaxed font-sans italic border-l-4 border-l-violet-500">
+                    <strong>AI Advice & Pertimbangan:</strong> {aiCalcResult.advice}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
       );
     }
 
