@@ -681,6 +681,16 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       sellRatio = 1 - buyRatio;
     }
 
+    if (analysis.indicators.harmonicPattern && analysis.indicators.harmonicPattern.points) {
+      const hp = analysis.indicators.harmonicPattern;
+      const sliceStart = candles.length - 30;
+      hp.points.X.index = hp.points.X.index - sliceStart;
+      hp.points.A.index = hp.points.A.index - sliceStart;
+      hp.points.B.index = hp.points.B.index - sliceStart;
+      hp.points.C.index = hp.points.C.index - sliceStart;
+      hp.points.D.index = hp.points.D.index - sliceStart;
+    }
+
     res.json({
       symbol,
       price: currentPrice,
@@ -783,6 +793,16 @@ app.get('/api/sentiment/forex', async (req, res) => {
     const dayAgoTime = Date.now() - 24 * 60 * 60 * 1000;
     const dayAgoCandle = candles.find(c => c.time >= dayAgoTime) || candles[0];
     const change24h = ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100;
+
+    if (analysis.indicators.harmonicPattern && analysis.indicators.harmonicPattern.points) {
+      const hp = analysis.indicators.harmonicPattern;
+      const sliceStart = candles.length - 30;
+      hp.points.X.index = hp.points.X.index - sliceStart;
+      hp.points.A.index = hp.points.A.index - sliceStart;
+      hp.points.B.index = hp.points.B.index - sliceStart;
+      hp.points.C.index = hp.points.C.index - sliceStart;
+      hp.points.D.index = hp.points.D.index - sliceStart;
+    }
 
     res.json({
       symbol,
