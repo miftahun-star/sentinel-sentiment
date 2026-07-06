@@ -1155,8 +1155,12 @@
           };
 
           // Subscribe to visible range updates (both horizontal time range and vertical price range)
-          chart.timeScale().subscribeVisibleTimeRangeChange(redrawOverlay);
-          chart.priceScale('right').subscribeVisiblePriceRangeChange(redrawOverlay);
+          if (chart.timeScale() && typeof chart.timeScale().subscribeVisibleTimeRangeChange === 'function') {
+            chart.timeScale().subscribeVisibleTimeRangeChange(redrawOverlay);
+          }
+          if (chart.priceScale('right') && typeof chart.priceScale('right').subscribeVisiblePriceRangeChange === 'function') {
+            chart.priceScale('right').subscribeVisiblePriceRangeChange(redrawOverlay);
+          }
           setTimeout(redrawOverlay, 100);
         }
 
@@ -1185,7 +1189,7 @@
 
       // Calculate Fibonacci-based Trade Setup
       const getTradeSetup = () => {
-        const fib = asset.indicators.fibonacci;
+        const fib = asset.indicators ? asset.indicators.fibonacci : null;
         if (!fib || !fib.levels) return null;
 
         const bias = getContrarianBias(asset.buyRatio);
@@ -1272,7 +1276,7 @@
         // 2. Stop Loss (Step 7) & Take Profit (Step 8) calculations
         if (entry > 0) {
           if (!sl || sl <= 0) {
-            const fib = asset.indicators.fibonacci;
+            const fib = asset.indicators ? asset.indicators.fibonacci : null;
             if (fib && fib.levels) {
               recSL = isBuyMode ? fib.levels['0.786'] * 0.998 : fib.levels['0.786'] * 1.002;
               logs.push(`Stop Loss tidak diisi. Rekomendasi SL Teknis (Fibonacci 0.786): ${recSL.toFixed(asset.price > 100 ? 2 : 4)}`);
@@ -1391,14 +1395,14 @@
                 <span class="rounded-full bg-zinc-800 px-2.5 py-0.5 text-[10px] font-bold text-zinc-400 uppercase font-mono">
                   {asset.id} / Timeframe {timeframe}
                 </span>
-                <span class={`flex h-1.5 w-1.5 rounded-full ${checkMarketOpen(asset.type) ? 'bg-green-500 glow-green' : 'bg-zinc-655'}`}></span>
+                <span class={`flex h-1.5 w-1.5 rounded-full ${checkMarketOpen(asset.type) ? 'bg-green-500 glow-green' : 'bg-zinc-600'}`}></span>
                 <span class="text-[9px] font-bold text-zinc-500 tracking-wider">
                   {checkMarketOpen(asset.type) ? 'MARKET OPEN' : 'MARKET CLOSED'}
                 </span>
                 <span class={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
-                  asset.status.includes('TRAPPED') ? 'bg-red-500/10 text-red-400' : 'bg-zinc-800 text-zinc-400'
+                  (asset.status || '').includes('TRAPPED') ? 'bg-red-500/10 text-red-400' : 'bg-zinc-800 text-zinc-400'
                 }`}>
-                  {asset.status.replace('_', ' ')}
+                  {(asset.status || '').replace('_', ' ')}
                 </span>
               </div>
               <h2 class="mt-2 font-heading text-2xl font-bold text-white">{asset.name} Live Analysis</h2>
@@ -1477,53 +1481,57 @@
                 </div>
 
                 {/* Tab 1 Content: Fibonacci Setup */}
-                {activeTab === 'plan' && setup && (
-                  <div class="mt-4 grid grid-cols-2 gap-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4">
-                    <div>
-                      <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Fibonacci Levels (Last 30 Candles)</p>
-                      <ul class="mt-2 space-y-1.5 text-xs font-mono text-zinc-300">
-                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
-                          <span class="text-zinc-500">0.000 (Swing {setup.isBullish ? 'High' : 'Low'})</span>
-                          <span class="text-zinc-400 font-bold">{asset.indicators.fibonacci.levels['0.000']}</span>
-                        </li>
-                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
-                          <span>0.618 (Golden Pocket)</span>
-                          <span class="font-bold">{asset.indicators.fibonacci.levels['0.618']}</span>
-                        </li>
-                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
-                          <span>0.500 (Mid Point)</span>
-                          <span class="font-bold">{asset.indicators.fibonacci.levels['0.500']}</span>
-                        </li>
-                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
-                          <span class="text-zinc-500">0.382 (Fib Level)</span>
-                          <span>{asset.indicators.fibonacci.levels['0.382']}</span>
-                        </li>
-                        <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
-                          <span class="text-zinc-500">0.786 (Limit Support)</span>
-                          <span>{asset.indicators.fibonacci.levels['0.786']}</span>
-                        </li>
-                        <li class="flex items-center justify-between">
-                          <span class="text-zinc-500">1.000 (Swing {setup.isBullish ? 'Low' : 'High'})</span>
-                          <span class="text-zinc-400">{asset.indicators.fibonacci.levels['1.000']}</span>
-                        </li>
-                      </ul>
-                    </div>
+                {activeTab === 'plan' && setup && asset.indicators && asset.indicators.fibonacci && asset.indicators.fibonacci.levels && (() => {
+                  const levels = asset.indicators.fibonacci.levels;
+                  const formatLevel = (val) => val !== undefined && val !== null ? val.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 }) : 'N/A';
+                  return (
+                    <div class="mt-4 grid grid-cols-2 gap-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4">
+                      <div>
+                        <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Fibonacci Levels (Last 30 Candles)</p>
+                        <ul class="mt-2 space-y-1.5 text-xs font-mono text-zinc-300">
+                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                            <span class="text-zinc-500">0.000 (Swing {setup.isBullish ? 'High' : 'Low'})</span>
+                            <span class="text-zinc-400 font-bold">{formatLevel(levels['0.000'])}</span>
+                          </li>
+                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
+                            <span>0.618 (Golden Pocket)</span>
+                            <span class="font-bold">{formatLevel(levels['0.618'])}</span>
+                          </li>
+                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
+                            <span>0.500 (Mid Point)</span>
+                            <span class="font-bold">{formatLevel(levels['0.500'])}</span>
+                          </li>
+                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                            <span class="text-zinc-500">0.382 (Fib Level)</span>
+                            <span>{formatLevel(levels['0.382'])}</span>
+                          </li>
+                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                            <span class="text-zinc-500">0.786 (Limit Support)</span>
+                            <span>{formatLevel(levels['0.786'])}</span>
+                          </li>
+                          <li class="flex items-center justify-between">
+                            <span class="text-zinc-500">1.000 (Swing {setup.isBullish ? 'Low' : 'High'})</span>
+                            <span class="text-zinc-400">{formatLevel(levels['1.000'])}</span>
+                          </li>
+                        </ul>
+                      </div>
 
-                    <div>
-                      <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Trading Plan</p>
-                      <div class="mt-2 space-y-3">
-                        <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
-                          <span class="block text-[9px] uppercase text-zinc-500 font-mono">Limit Entry Zone</span>
-                          <span class="text-xs font-bold text-white font-mono mt-0.5">{setup.entryRange}</span>
-                        </div>
-                        <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
-                          <span class="block text-[9px] uppercase text-zinc-500 font-mono">Stop Loss (SL)</span>
-                          <span class="text-xs font-bold text-red-400 font-mono mt-0.5">{setup.stopLoss}</span>
+                      <div>
+                        <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Trading Plan</p>
+                        <div class="mt-2 space-y-3">
+                          <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
+                            <span class="block text-[9px] uppercase text-zinc-500 font-mono">Limit Entry Zone</span>
+                            <span class="text-xs font-bold text-white font-mono mt-0.5">{setup.entryRange}</span>
+                          </div>
+                          <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
+                            <span class="block text-[9px] uppercase text-zinc-500 font-mono">Stop Loss (SL)</span>
+                            <span class="text-xs font-bold text-red-400 font-mono mt-0.5">{setup.stopLoss}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Tab 2 Content: Extended Metrics */}
                 {activeTab === 'indicators' && asset.indicators ? (
@@ -1566,8 +1574,8 @@
                       <div class="border-t border-white/5 pt-2">
                         <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Moving Averages</span>
                         <div class="mt-1 space-y-0.5 text-[11px]">
-                          <div class="flex justify-between"><span>SMA 20 (Mid BB)</span><span class="text-white">{asset.indicators.sma20}</span></div>
-                          <div class="flex justify-between"><span>EMA 50 (Trend Line)</span><span class="text-blue-400">{asset.indicators.ema50}</span></div>
+                          <div class="flex justify-between"><span>SMA 20 (Mid BB)</span><span class="text-white">{asset.indicators.sma20 !== undefined && asset.indicators.sma20 !== null ? asset.indicators.sma20 : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>EMA 50 (Trend Line)</span><span class="text-blue-400">{asset.indicators.ema50 !== undefined && asset.indicators.ema50 !== null ? asset.indicators.ema50 : 'N/A'}</span></div>
                         </div>
                       </div>
                     </div>
@@ -2113,18 +2121,21 @@
     // Trend-Following (Non-Contrarian) Playbook Sub-Component
     // ====================================================
     function TrendFollowingPlaybook({ asset }) {
-      const isBullish = asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
+      const indicators = asset.indicators || {};
+      const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
+      const sma20 = indicators.sma20 !== undefined ? indicators.sma20 : asset.price;
+      const isBullish = rsi > 50 && asset.price > sma20;
       let direction = 'BULLISH TREND';
       let commentary = '';
       let styleClass = 'border-green-500/25 bg-green-500/[0.03]';
 
       if (isBullish) {
         direction = 'BULLISH TREND (Trend-Following)';
-        commentary = `Harga berada di atas rata-rata pergerakan harian (SMA 20) dan RSI (${asset.indicators.rsi}) berada di wilayah bullish (>50). Momentum pembeli mendominasi struktur pasar. Sinyal non-contrarian merekomendasikan untuk mengikuti tren naik utama (Buy Strength) dengan menargetkan area resisten berikutnya.`;
+        commentary = `Harga berada di atas rata-rata pergerakan harian (SMA 20) dan RSI (${rsi}) berada di wilayah bullish (>50). Momentum pembeli mendominasi struktur pasar. Sinyal non-contrarian merekomendasikan untuk mengikuti tren naik utama (Buy Strength) dengan menargetkan area resisten berikutnya.`;
         styleClass = 'border-green-500/25 bg-green-500/[0.03]';
       } else {
         direction = 'BEARISH TREND (Trend-Following)';
-        commentary = `Harga ditransaksikan di bawah SMA 20 dan RSI (${asset.indicators.rsi}) berada di wilayah bearish (<50). Tren utama didominasi oleh penjual. Sinyal non-contrarian merekomendasikan untuk mengikuti momentum penurunan utama (Sell Rallies) untuk menargetkan level support terendah berikutnya.`;
+        commentary = `Harga ditransaksikan di bawah SMA 20 dan RSI (${rsi}) berada di wilayah bearish (<50). Tren utama didominasi oleh penjual. Sinyal non-contrarian merekomendasikan untuk mengikuti momentum penurunan utama (Sell Rallies) untuk menargetkan level support terendah berikutnya.`;
         styleClass = 'border-red-500/25 bg-red-500/[0.03]';
       }
 
