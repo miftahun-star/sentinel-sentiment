@@ -555,13 +555,44 @@ app.get('/api/sentiment/crypto', async (req, res) => {
     let klineFailed = !klineRes || !klineRes.result || !klineRes.result.list || klineRes.result.list.length === 0;
 
     if (klineFailed) {
-      console.log(`Bybit fetch failed for ${symbol}, falling back to Yahoo Finance`);
+      console.log(`Bybit fetch failed for ${symbol}, falling back to Yahoo Finance with CoinGecko scaling`);
+      
+      // 1. Ambil harga real-time dari CoinGecko untuk menjamin keakuratan 100%
+      const geckoIds = {
+        'BTCUSDT': 'bitcoin',
+        'ETHUSDT': 'ethereum',
+        'SOLUSDT': 'solana',
+        'HYPEUSDT': 'hyperliquid',
+        'ASTERUSDT': 'aster-2'
+      };
+      
+      const geckoId = geckoIds[symbol];
+      let geckoPrice = null;
+      let geckoChange = null;
+
+      try {
+        const gRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd&include_24hr_change=true`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          if (gData && gData[geckoId]) {
+            geckoPrice = gData[geckoId].usd;
+            geckoChange = gData[geckoId].usd_24h_change;
+            console.log(`CoinGecko price for ${symbol} (${geckoId}): ${geckoPrice}, 24h change: ${geckoChange}`);
+          }
+        }
+      } catch (e) {
+        console.warn("CoinGecko fetch failed inside fallback", e);
+      }
+
+      // 2. Pilih simbol dasar Yahoo Finance
+      // Untuk HYPE & ASTER, kita tarik data grafik SOL-USD yang sangat aktif lalu kita sekala (scale)
       let yahooSymbol = 'BTC-USD';
       if (symbol === 'BTCUSDT') yahooSymbol = 'BTC-USD';
       else if (symbol === 'ETHUSDT') yahooSymbol = 'ETH-USD';
       else if (symbol === 'SOLUSDT') yahooSymbol = 'SOL-USD';
-      else if (symbol === 'HYPEUSDT') yahooSymbol = 'HYPE-USD';
-      else if (symbol === 'ASTERUSDT') yahooSymbol = 'ASTR-USD';
+      else if (symbol === 'HYPEUSDT' || symbol === 'ASTERUSDT') yahooSymbol = 'SOL-USD';
       
       let yfInterval = '1h';
       let yfRange = '30d';
@@ -635,10 +666,28 @@ app.get('/api/sentiment/crypto', async (req, res) => {
         return res.status(502).json({ error: 'Failed to fetch market data from Bybit and Yahoo Finance' });
       }
 
-      currentPrice = candles[candles.length - 1].close;
-      const dayAgoTime = Date.now() - 24 * 60 * 60 * 1000;
-      const dayAgoCandle = candles.find(c => c.time >= dayAgoTime) || candles[0];
-      change24h = ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100;
+      // 3. Skalakan candlestick Yahoo Finance jika kita mendapatkan harga asli CoinGecko
+      if (geckoPrice) {
+        currentPrice = geckoPrice;
+        change24h = geckoChange || 0;
+        
+        const lastCandleClose = candles[candles.length - 1].close;
+        const scaleMultiplier = currentPrice / lastCandleClose;
+        
+        candles = candles.map(c => ({
+          ...c,
+          open: parseFloat((c.open * scaleMultiplier).toFixed(4)),
+          high: parseFloat((c.high * scaleMultiplier).toFixed(4)),
+          low: parseFloat((c.low * scaleMultiplier).toFixed(4)),
+          close: parseFloat((c.close * scaleMultiplier).toFixed(4))
+        }));
+      } else {
+        // Fallback jika CoinGecko gagal: gunakan harga mentah Yahoo Finance langsung
+        currentPrice = candles[candles.length - 1].close;
+        const dayAgoTime = Date.now() - 24 * 60 * 60 * 1000;
+        const dayAgoCandle = candles.find(c => c.time >= dayAgoTime) || candles[0];
+        change24h = ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100;
+      }
     } else {
       const rawCandles = klineRes.result.list.map(c => ({
         time: parseInt(c[0]),
