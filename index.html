@@ -726,6 +726,7 @@
       const chartContainerRef = useRef(null);
       const overlayCanvasRef = useRef(null);
       const tvChartRef = useRef(null);
+      const [isFullscreen, setIsFullscreen] = useState(false);
       const [activeTab, setActiveTab] = useState('plan'); // 'plan' or 'indicators'
       
       const [accountSizeStr, setAccountSizeStr] = useState('');
@@ -907,9 +908,10 @@
         const container = chartContainerRef.current;
         container.innerHTML = '';
 
+        const chartHeight = isFullscreen ? (window.innerHeight - 180) : 260;
         const chart = LightweightCharts.createChart(container, {
           width: container.clientWidth,
-          height: 260,
+          height: chartHeight,
           layout: {
             background: { type: 'solid', color: 'transparent' },
             textColor: '#71717a',
@@ -995,10 +997,11 @@
         const resizeCanvas = () => {
           if (!overlayCanvas || !container) return;
           const dpr = window.devicePixelRatio || 1;
+          const currentHeight = isFullscreen ? (window.innerHeight - 180) : 260;
           overlayCanvas.width = container.clientWidth * dpr;
-          overlayCanvas.height = 260 * dpr;
+          overlayCanvas.height = currentHeight * dpr;
           overlayCanvas.style.width = `${container.clientWidth}px`;
-          overlayCanvas.style.height = `260px`;
+          overlayCanvas.style.height = `${currentHeight}px`;
           const ctx = overlayCanvas.getContext('2d');
           ctx.resetTransform();
           ctx.scale(dpr, dpr);
@@ -1133,7 +1136,11 @@
         // Responsive resize
         const resizeObserver = new ResizeObserver(() => {
           if (chartContainerRef.current) {
-            chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+            const currentHeight = isFullscreen ? (window.innerHeight - 180) : 260;
+            chart.applyOptions({ 
+              width: chartContainerRef.current.clientWidth,
+              height: currentHeight
+            });
             resizeCanvas();
             redrawOverlay();
           }
@@ -1145,7 +1152,7 @@
           chart.remove();
           tvChartRef.current = null;
         };
-      }, [asset]);
+      }, [asset, isFullscreen]);
 
       // Calculate Fibonacci-based Trade Setup
       const getTradeSetup = () => {
@@ -1373,16 +1380,41 @@
               {/* Left Column: Candlestick Canvas Chart */}
               <div>
                 <div class="flex items-center justify-between mb-3">
-                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Live Candlestick Spark Chart</p>
+                  <div class="flex items-center gap-3">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Live Candlestick Spark Chart</p>
+                    <button 
+                      onClick={() => setIsFullscreen(!isFullscreen)}
+                      class="rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-white/5 px-3 py-1 text-[10px] uppercase font-bold text-zinc-300 hover:text-white transition-all shadow-sm"
+                    >
+                      {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                    </button>
+                  </div>
                   <div class="flex items-center gap-4 text-[10px] text-zinc-500 font-mono">
                     <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>EMA 50</span>
                     <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-red-400/30"></span>Lower BB</span>
                     <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-green-400/30"></span>Upper BB</span>
                   </div>
                 </div>
-                <div class="relative rounded-2xl border border-white/5 bg-zinc-900/20 p-4">
-                  <div class="relative w-full" style={{ minHeight: '260px' }}>
-                    <div ref={chartContainerRef} class="w-full" style={{ minHeight: '260px' }}></div>
+                <div class={isFullscreen 
+                  ? "fixed inset-0 z-[100] bg-zinc-950/98 p-6 flex flex-col justify-between" 
+                  : "relative rounded-2xl border border-white/5 bg-zinc-900/20 p-4"
+                }>
+                  {isFullscreen && (
+                    <div class="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
+                      <div>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">{asset.id} ({asset.symbol}) - Chart Fullscreen ({timeframe})</h3>
+                        <p class="text-[10px] text-zinc-500">Gunakan pinch/scroll untuk Zoom, drag chart untuk Pan, drag sumbu harga untuk vertical scale.</p>
+                      </div>
+                      <button 
+                        onClick={() => setIsFullscreen(false)}
+                        class="rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-4 py-2 text-xs font-bold text-red-400 transition-colors"
+                      >
+                        TUTUP FULLSCREEN
+                      </button>
+                    </div>
+                  )}
+                  <div class="relative w-full flex-1 flex flex-col" style={{ minHeight: isFullscreen ? 'calc(100vh - 200px)' : '260px' }}>
+                    <div ref={chartContainerRef} class="w-full flex-1" style={{ minHeight: isFullscreen ? 'calc(100vh - 200px)' : '260px' }}></div>
                     <canvas ref={overlayCanvasRef} class="absolute top-0 left-0 pointer-events-none w-full h-full z-10"></canvas>
                   </div>
                 </div>
