@@ -328,6 +328,24 @@ function detectHarmonics(candles, period = 'H1') {
         if (bestMatch.name.includes('Cypher')) displayXD = rXD_XC;
         if (bestMatch.name.includes('5-0')) displayXD = rCD_BC;
 
+        // Calculate SL & TP to check Risk-to-Reward ratio
+        const isBullishForecast = bestMatch.name.toLowerCase().includes('bullish');
+        const priceRange = Math.abs(A - X);
+        const slPrice = isBullishForecast 
+          ? Math.min(X, D) * 0.992 
+          : Math.max(X, D) * 1.008;
+        const tpPrice = isBullishForecast 
+          ? D + priceRange * 0.618 
+          : D - priceRange * 0.618;
+
+        const slDistance = Math.abs(D - slPrice);
+        const tpDistance = Math.abs(tpPrice - D);
+
+        // If Stop Loss distance exceeds Take Profit distance, discard the signal
+        if (slDistance > tpDistance) {
+          return null;
+        }
+
         return {
           pattern: bestMatch.name,
           confidence: parseFloat(Math.min(99, Math.max(60, bestMatch.score)).toFixed(1)),
