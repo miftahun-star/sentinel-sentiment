@@ -556,7 +556,12 @@ app.get('/api/sentiment/crypto', async (req, res) => {
 
     if (klineFailed) {
       console.log(`Bybit fetch failed for ${symbol}, falling back to Yahoo Finance`);
-      const yahooSymbol = symbol === 'BTCUSDT' ? 'BTC-USD' : (symbol === 'ETHUSDT' ? 'ETH-USD' : 'SOL-USD');
+      let yahooSymbol = 'BTC-USD';
+      if (symbol === 'BTCUSDT') yahooSymbol = 'BTC-USD';
+      else if (symbol === 'ETHUSDT') yahooSymbol = 'ETH-USD';
+      else if (symbol === 'SOLUSDT') yahooSymbol = 'SOL-USD';
+      else if (symbol === 'HYPEUSDT') yahooSymbol = 'HYPE-USD';
+      else if (symbol === 'ASTERUSDT') yahooSymbol = 'ASTR-USD';
       
       let yfInterval = '1h';
       let yfRange = '30d';
@@ -571,7 +576,11 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       else if (period === '1M' || period === '1month') { yfInterval = '1mo'; yfRange = '1800d'; }
 
       const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${yfInterval}&range=${yfRange}`;
-      const yfResponse = await fetch(yfUrl);
+      const yfResponse = await fetch(yfUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
       const yfData = await yfResponse.json();
 
       if (!yfData.chart?.result?.[0]) {
@@ -733,8 +742,11 @@ app.get('/api/sentiment/forex', async (req, res) => {
     else if (period === 'W1') { yfInterval = '1wk'; yfRange = '720d'; }
     else if (period === '1M' || period === '1month') { yfInterval = '1mo'; yfRange = '1800d'; }
 
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yfInterval}&range=${yfRange}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
     const data = await response.json();
 
     if (!data.chart?.result?.[0]) {
@@ -824,36 +836,26 @@ app.get('/api/sentiment/forex', async (req, res) => {
 // ----------------------------------------------------
 app.get('/api/news', async (req, res) => {
   try {
-    let rssText = '';
-    
-    // Attempt 1: Fetch ForexLive feed
-    try {
-      const response = await fetch('https://www.forexlive.com/feed', {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-      });
-      if (response.ok) {
-        rssText = await response.text();
-      }
-    } catch (e) {
-      console.warn("Forexlive RSS fetch failed, trying Yahoo");
-    }
+    const urls = [
+      'https://www.forexlive.com/feed',
+      'https://finance.yahoo.com/news/rss',
+      'https://www.investing.com/rss/news_285.rss',
+      'https://www.investing.com/rss/news_95.rss'
+    ];
 
-    // Attempt 2: Fetch Yahoo Finance news RSS
-    if (!rssText) {
-      try {
-        const response = await fetch('https://finance.yahoo.com/news/rss', {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-        });
-        if (response.ok) {
-          rssText = await response.text();
-        }
-      } catch (e) {
-        console.warn("Yahoo RSS fetch failed, using fallback");
-      }
-    }
+    const feedPromises = urls.map(url => 
+      fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+      })
+      .then(res => res.ok ? res.text() : '')
+      .catch(() => '')
+    );
 
+    const results = await Promise.all(feedPromises);
     let news = [];
-    if (rssText) {
+
+    for (const rssText of results) {
+      if (!rssText) continue;
       const items = rssText.match(/<item>([\s\S]*?)<\/item>/g) || [];
       for (const item of items) {
         const titleMatch = item.match(/<title>([\s\S]*?)<\/title>/);
@@ -869,39 +871,59 @@ app.get('/api/news', async (req, res) => {
 
           let impact = 'LOW';
           const upperTitle = title.toUpperCase();
+          const upperDesc = description.toUpperCase();
+          const combinedText = `${upperTitle} ${upperDesc}`;
           
-          // Definisikan berita berdampak tinggi yang memengaruhi arah jangka panjang/pendek secara pasti
           if (
-            upperTitle.includes('FED') || upperTitle.includes('FOMC') || upperTitle.includes('POWELL') ||
-            upperTitle.includes('CPI') || upperTitle.includes('INFLATION') || upperTitle.includes('INFLASI') ||
-            upperTitle.includes('NFP') || upperTitle.includes('PAYROLL') || upperTitle.includes('UNEMPLOYMENT') ||
-            upperTitle.includes('RATE') || upperTitle.includes('SUKU BUNGA') ||
-            upperTitle.includes('GEOPOLITICAL') || upperTitle.includes('WAR') || upperTitle.includes('PERANG') ||
-            upperTitle.includes('TRUMP') || upperTitle.includes('TARIFF') || upperTitle.includes('BREAKING') ||
-            upperTitle.includes('ECB') || upperTitle.includes('BOJ') || upperTitle.includes('RBA') || 
-            upperTitle.includes('RBNZ') || upperTitle.includes('PBOC') || upperTitle.includes('BOE') ||
-            upperTitle.includes('YEN') || upperTitle.includes('GOLD') || upperTitle.includes('OIL') ||
-            upperTitle.includes('OPEC') || upperTitle.includes('MISSILE') || upperTitle.includes('INTERVENTION') ||
-            upperTitle.includes('GDP') || upperTitle.includes('PMI') || upperTitle.includes('JOBS') ||
-            upperTitle.includes('RETAIL') || upperTitle.includes('CHINA') || upperTitle.includes('POLICYS') ||
-            upperTitle.includes('HAWKISH') || upperTitle.includes('DOVISH')
+            combinedText.includes('FED') || combinedText.includes('FOMC') || combinedText.includes('POWELL') ||
+            combinedText.includes('CPI') || combinedText.includes('INFLATION') || combinedText.includes('INFLASI') ||
+            combinedText.includes('NFP') || combinedText.includes('PAYROLL') || combinedText.includes('UNEMPLOYMENT') ||
+            combinedText.includes('EMPLOYMENT') || combinedText.includes('JOBLESS') || combinedText.includes('PENGANGGURAN') ||
+            combinedText.includes('RATE') || combinedText.includes('SUKU BUNGA') || combinedText.includes('INTEREST') ||
+            combinedText.includes('GEOPOLITICAL') || combinedText.includes('GEOPOLITIK') || combinedText.includes('WAR') || 
+            combinedText.includes('PERANG') || combinedText.includes('STRIKE') || combinedText.includes('MILITARY') ||
+            combinedText.includes('TRUMP') || combinedText.includes('TARIFF') || combinedText.includes('TARIF') || 
+            combinedText.includes('TRADE') || combinedText.includes('PERDAGANGAN') || combinedText.includes('BREAKING') ||
+            combinedText.includes('ECB') || combinedText.includes('BOJ') || combinedText.includes('RBA') || 
+            combinedText.includes('RBNZ') || combinedText.includes('PBOC') || combinedText.includes('BOE') || 
+            combinedText.includes('SNB') || combinedText.includes('LAGARDE') || combinedText.includes('BAILEY') ||
+            combinedText.includes('YEN') || combinedText.includes('GOLD') || combinedText.includes('EMAS') || 
+            combinedText.includes('OIL') || combinedText.includes('MINYAK') || combinedText.includes('OPEC') || 
+            combinedText.includes('MISSILE') || combinedText.includes('RUDAL') || combinedText.includes('INTERVENTION') || 
+            combinedText.includes('INTERVENSI') || combinedText.includes('GDP') || combinedText.includes('PMI') || 
+            combinedText.includes('RETAIL') || combinedText.includes('RITEL') || combinedText.includes('CHINA') || 
+            combinedText.includes('HAWKISH') || combinedText.includes('DOVISH') || combinedText.includes('LIQUIDITY') || 
+            combinedText.includes('STIMULUS') || combinedText.includes('INJEKSI') || combinedText.includes('MARKET-MOVING') ||
+            combinedText.includes('TREASURY') || combinedText.includes('BOND') || combinedText.includes('YIELD') ||
+            combinedText.includes('ELECTION') || combinedText.includes('PEMILU') || combinedText.includes('SANCTION') ||
+            combinedText.includes('SANKSI') || combinedText.includes('MIDDLE EAST') || combinedText.includes('TIMUR TENGAH') ||
+            combinedText.includes('CONFLICT') || combinedText.includes('KONFLIK') || combinedText.includes('CRUDE')
           ) {
             impact = 'HIGH';
           }
 
           if (impact === 'HIGH') {
-            news.push({
-              title,
-              link,
-              pubDate,
-              description,
-              impact
-            });
-            if (news.length >= 10) break;
+            // Hilangkan duplikat berdasarkan kesamaan judul
+            const isDuplicate = news.some(n => n.title.toLowerCase() === title.toLowerCase());
+            if (!isDuplicate) {
+              news.push({
+                title,
+                link,
+                pubDate,
+                description,
+                impact
+              });
+            }
           }
         }
       }
     }
+
+    // Urutkan berdasarkan tanggal publikasi terbaru
+    news.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+
+    // Ambil maksimal 12 berita agar tampilan grid penuh dan seimbang
+    news = news.slice(0, 12);
 
     if (news.length === 0) {
       const now = new Date();
