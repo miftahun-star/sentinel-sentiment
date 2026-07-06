@@ -1054,8 +1054,25 @@
             ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
             const getCoords = (p) => {
-              const x = chart.timeScale().timeToCoordinate(p.time);
-              const y = candleSeries.priceToCoordinate(p.value);
+              let x = chart.timeScale().timeToCoordinate(p.time);
+              let y = candleSeries.priceToCoordinate(p.value);
+
+              // Off-screen coordinate estimation if null
+              if (x === null) {
+                const visibleRange = chart.timeScale().getVisibleRange();
+                if (visibleRange) {
+                  if (p.time < visibleRange.from) {
+                    x = -500;
+                  } else {
+                    x = container.clientWidth + 500;
+                  }
+                } else {
+                  x = -500;
+                }
+              }
+              if (y === null) {
+                y = 0;
+              }
               return { x, y };
             };
 
@@ -1064,9 +1081,6 @@
             const cB = getCoords(pB);
             const cC = getCoords(pC);
             const cD = getCoords(pD);
-
-            if (cX.x === null || cA.x === null || cB.x === null || cC.x === null || cD.x === null) return;
-            if (cX.y === null || cA.y === null || cB.y === null || cC.y === null || cD.y === null) return;
 
             // Draw shaded triangles X-A-B and B-C-D
             ctx.fillStyle = 'rgba(234, 179, 8, 0.12)';
@@ -1108,8 +1122,9 @@
             ctx.setLineDash([]);
           };
 
-          // Subscribe to visible range updates to redraw on scroll and zoom
+          // Subscribe to visible range updates (both horizontal time range and vertical price range)
           chart.timeScale().subscribeVisibleTimeRangeChange(redrawOverlay);
+          chart.priceScale('right').subscribeVisiblePriceRangeChange(redrawOverlay);
           setTimeout(redrawOverlay, 100);
         }
 
@@ -1674,7 +1689,7 @@
 
                 {/* Playbooks Section (Contrarian & Non-Contrarian Trend Following) */}
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <ContrarianPlaybook asset={asset} />
+                  <ContrarianPlaybook asset={asset} timeframe={timeframe} />
                   <TrendFollowingPlaybook asset={asset} />
                 </div>
 
@@ -1893,7 +1908,7 @@
     // ====================================================
     // Playbook Sub-Component
     // ====================================================
-    function ContrarianPlaybook({ asset }) {
+    function ContrarianPlaybook({ asset, timeframe }) {
       const longPct = (asset.buyRatio * 100).toFixed(1);
       const shortPct = (asset.sellRatio * 100).toFixed(1);
 
@@ -1978,6 +1993,44 @@
                   ? ' Hal ini mengonfirmasi zona pembalikan arah naik (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang shorting. Sinyal beli terkonfirmasi.'
                   : ' Hal ini mengonfirmasi zona pembalikan arah turun (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang melakukan pembelian. Sinyal jual terkonfirmasi.'
                 }
+              </div>
+
+              {/* Timeframe Accuracy Rating / Alert */}
+              <div class="mt-3 text-[11px] leading-relaxed">
+                {(() => {
+                  const tf = timeframe || 'H1';
+                  const isSharkOrCypher = asset.indicators.harmonicPattern.pattern.includes('Shark') || asset.indicators.harmonicPattern.pattern.includes('Cypher');
+                  
+                  if (tf === 'M1' || tf === 'M5' || tf === 'M15') {
+                    return (
+                      <div class="rounded-lg border border-red-500/20 bg-red-950/10 p-2.5 text-red-400">
+                        <strong class="text-red-400 block uppercase mb-1">⚠️ Akurasi Sangat Rendah (TF {tf})</strong>
+                        Sistem mendeteksi pola di Timeframe Rendah (M1-M15). Spread/slippage mengambil porsi besar dari panjang leg, dan swing point sering kali berupa stop-hunt alogaritma, bukan pergeseran supply-demand riil. Gunakan TF ini <strong>hanya untuk mencari konfirmasi entri Stochastic/BB</strong> yang tajam setelah zona PRZ dihitung dari H1-H4.
+                      </div>
+                    );
+                  } else if (tf === 'M30' || tf === 'H1') {
+                    return (
+                      <div class="rounded-lg border border-orange-500/20 bg-orange-950/10 p-2.5 text-orange-400">
+                        <strong class="text-orange-400 block uppercase mb-1">⚠️ TF Menengah / Butuh Konfirmasi (TF {tf})</strong>
+                        Sinyal mulai layak{isSharkOrCypher ? ' (Shark/Cypher lebih toleran terhadap intraday)' : ''}, tetapi pola rentan invalid oleh 1-2 candle noise. Wajib mencari konfirmasi tambahan seperti divergence Stochastic/RSI dan pola candlestick (pinbar/engulfing) di area PRZ.
+                      </div>
+                    );
+                  } else if (tf === 'H4') {
+                    return (
+                      <div class="rounded-lg border border-green-500/20 bg-green-950/10 p-2.5 text-green-400">
+                        <strong class="text-green-400 block uppercase mb-1">✨ Sweet Spot Harmonic (TF {tf})</strong>
+                        Titik ideal terbaik! Swing point merepresentasikan sesi trading institusional yang bersih dari noise acak. Akurasi geometri Fibonacci berada pada level optimum dengan kuantitas setup reguler.
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div class="rounded-lg border border-emerald-500/20 bg-emerald-950/10 p-2.5 text-emerald-400">
+                        <strong class="text-emerald-400 block uppercase mb-1">💎 Akurasi Maksimal (TF {tf})</strong>
+                        Presisi geometri tertinggi dengan tingkat noise terendah. Pola sangat valid, namun membutuhkan waktu berminggu-minggu untuk terbentuk sempurna. Setup ini sangat berharga.
+                      </div>
+                    );
+                  }
+                })()}
               </div>
             </div>
           )}
