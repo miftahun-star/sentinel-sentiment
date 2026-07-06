@@ -668,7 +668,7 @@
               <h3 class="mt-1 font-heading text-lg font-bold text-white group-hover:text-green-400 transition-colors">
                 {data.name}
               </h3>
-              {data.indicators && data.indicators.harmonicPattern && (
+              {data.indicators && data.indicators.harmonicPattern && data.indicators.harmonicPattern.pattern && (
                 <span class={`mt-1.5 inline-block rounded border px-2 py-0.5 text-[8px] font-bold tracking-wider uppercase font-mono ${
                   data.indicators.harmonicPattern.pattern.includes('Bullish')
                     ? 'border-green-500/30 bg-green-500/5 text-green-400'
@@ -1028,16 +1028,20 @@
           // Safely resolve each point
           const resolvePoint = (pt, fallbackIdx) => {
             if (pt && typeof pt === 'object' && pt.price !== undefined) {
-              if (pt.time !== undefined) {
+              if (pt.time !== undefined && pt.time !== null && !isNaN(pt.time)) {
                 return { time: Math.floor(pt.time / 1000), value: pt.price };
               }
-              if (pt.index !== undefined) {
-                const idx = Math.max(0, Math.min(tvCandles.length - 1, pt.index));
-                return { time: tvCandles[idx].time, value: pt.price };
+              if (pt.index !== undefined && pt.index !== null && !isNaN(pt.index)) {
+                const idx = Math.max(0, Math.min(tvCandles.length - 1, Math.floor(pt.index)));
+                if (tvCandles[idx]) {
+                  return { time: tvCandles[idx].time, value: pt.price };
+                }
               }
             }
-            const idx = Math.max(0, Math.min(tvCandles.length - 1, fallbackIdx));
-            return { time: tvCandles[idx].time, value: (pt && typeof pt === 'object') ? pt.price : pt };
+            const fallbackVal = (pt && typeof pt === 'object') ? pt.price : pt;
+            const idx = Math.max(0, Math.min(tvCandles.length - 1, fallbackIdx || 0));
+            const timeVal = tvCandles[idx] ? tvCandles[idx].time : Math.floor(Date.now() / 1000);
+            return { time: timeVal, value: fallbackVal };
           };
 
           const pX = resolvePoint(pts.X, 0);
