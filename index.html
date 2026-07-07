@@ -1836,55 +1836,131 @@
               })()}
 
               {/* Card 5: Contrarian Playbook & Harmonics */}
-              <div class="rounded-3xl border border-white/5 bg-zinc-900/20 p-6 flex flex-col justify-between">
-                <div>
-                  <ContrarianPlaybook asset={asset} timeframe={timeframe} />
-                </div>
-              </div>
+              {(() => {
+                const bias = getContrarianBias(asset.buyRatio);
+                const isBullish = bias.includes('BULLISH');
+                const isBearish = bias.includes('BEARISH');
+                
+                let stance = 'NEUTRAL (Tunggu Konfirmasi)';
+                let commentary = '';
+                
+                if (asset.status === 'TRAPPED_LONG') {
+                  stance = 'STRONG BEARISH (Mencari Trigger Sell)';
+                  commentary = `Retail terperangkap membeli di dasar (falling knife) dengan posisi Long ${longPct}%. Likuiditas stop loss mereka menumpuk di bawah Swing Low terkini. Perusahaan institusi (smart money) cenderung menyapu stop loss ini untuk mendapatkan likuiditas jual. Tunggu koreksi ke area Fibonacci 0.500 atau 0.618 untuk mencari entry Jual.`;
+                } else if (asset.status === 'TRAPPED_SHORT') {
+                  stance = 'STRONG BULLISH (Mencari Trigger Buy)';
+                  commentary = `Retail trader terperangkap shorting melawan momentum naik (top picking) dengan posisi Short ${shortPct}%. Likuiditas order beli stop loss mereka menumpuk di atas Swing High terkini. Gunakan zona Fibonacci retracement 0.500 - 0.618 sebagai diskon masuk Beli saat retest.`;
+                } else if (asset.buyRatio > 0.60) {
+                  stance = 'BEARISH (Bias Sell)';
+                  commentary = `Akumulasi posisi Long retail mencapai ${longPct}%. Sesuai logika contrarian, bias pergerakan cenderung menurun karena pembeli retail kehabisan modal untuk mempertahankan dorongan ke atas. Targetkan kelanjutan struktur korektif ke arah bawah.`;
+                } else if (asset.sellRatio > 0.60) {
+                  stance = 'BULLISH (Bias Buy)';
+                  commentary = `Penjual retail mendominasi pasar dengan ${shortPct}% Short. Likuiditas pembelian terkonsentrasi di atas resisten untuk menyapu order stop loss mereka. Peluang beli lebih disukai.`;
+                } else {
+                  commentary = `Rasio sentimen retail berada di wilayah netral (${longPct}% Long vs ${shortPct}% Short). Tidak ada keunggulan contrarian yang jelas saat ini. Disarankan menunggu hingga rasio bergeser melebihi 60% di salah satu sisi.`;
+                }
+
+                return (
+                  <div class="rounded-3xl border border-white/5 bg-zinc-900/20 p-6 flex flex-col justify-between">
+                    <div>
+                      <div class="flex items-center justify-between border-b border-white/5 pb-3 mb-3">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-zinc-400 font-heading">Contrarian Playbook</h4>
+                        <span class={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                          stance.includes('BULLISH') ? 'bg-green-500/10 text-green-400' : (stance.includes('BEARISH') ? 'bg-red-500/10 text-red-400' : 'bg-zinc-800 text-zinc-400')
+                        }`}>
+                          {stance.split(' (')[0]}
+                        </span>
+                      </div>
+                      
+                      <p class="text-xs text-zinc-300 leading-relaxed font-sans">{commentary}</p>
+
+                      {asset.indicators && asset.indicators.harmonicPattern && (
+                        <div class="mt-4 pt-4 border-t border-white/5">
+                          <div class="flex items-center justify-between mb-2">
+                            <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-wider font-mono">Harmonic Pattern</span>
+                            <span class={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                              asset.indicators.harmonicPattern.pattern.includes('Bullish') ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'
+                            }`}>
+                              {asset.indicators.harmonicPattern.pattern}
+                            </span>
+                          </div>
+                          <div class="space-y-1.5 text-xs font-mono text-zinc-300">
+                            <div class="flex justify-between">
+                              <span class="text-zinc-500">Confidence</span>
+                              <span class="text-white font-bold">{asset.indicators.harmonicPattern.confidence}%</span>
+                            </div>
+                            <div class="flex justify-between border-b border-white/[0.03] pb-1">
+                              <span class="text-zinc-500">AB / BC / XD Ratios</span>
+                              <span class="text-zinc-300">{asset.indicators.harmonicPattern.ratios.AB} / {asset.indicators.harmonicPattern.ratios.BC} / {asset.indicators.harmonicPattern.ratios.XD}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Card 6: Non-Contrarian Trend Following & Fibonacci */}
-              <div class="rounded-3xl border border-white/5 bg-zinc-900/20 p-6 flex flex-col justify-between">
-                <div>
-                  <TrendFollowingPlaybook asset={asset} />
-                  
-                  {asset.indicators && asset.indicators.fibonacci && asset.indicators.fibonacci.levels && (() => {
-                    const levels = asset.indicators.fibonacci.levels;
-                    const formatLevel = (val) => val !== undefined && val !== null ? val.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 }) : 'N/A';
-                    return (
-                      <div class="mt-4 pt-4 border-t border-white/5">
-                        <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 font-mono font-bold">Fibonacci Levels (Last 30 Candles)</p>
-                        <ul class="space-y-1.5 text-xs font-mono text-zinc-300">
-                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
-                            <span class="text-zinc-500">0.000 (Swing {setup.isBullish ? 'High' : 'Low'})</span>
-                            <span class="text-zinc-400 font-bold">{formatLevel(levels['0.000'])}</span>
-                          </li>
-                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
-                            <span>0.618 (Golden Pocket)</span>
-                            <span class="font-bold">{formatLevel(levels['0.618'])}</span>
-                          </li>
-                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1 text-green-400 bg-green-500/5 px-1.5 rounded">
-                            <span>0.500 (Mid Point)</span>
-                            <span class="font-bold">{formatLevel(levels['0.500'])}</span>
-                          </li>
-                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
-                            <span class="text-zinc-500">0.382 (Fib Level)</span>
-                            <span>{formatLevel(levels['0.382'])}</span>
-                          </li>
-                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
-                            <span class="text-zinc-500">0.786 (Limit Support)</span>
-                            <span>{formatLevel(levels['0.786'])}</span>
-                          </li>
-                          <li class="flex items-center justify-between">
-                            <span class="text-zinc-500">1.000 (Swing {setup.isBullish ? 'Low' : 'High'})</span>
-                            <span class="text-zinc-400">{formatLevel(levels['1.000'])}</span>
-                          </li>
-                        </ul>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
+              {(() => {
+                const isBullish = asset.indicators && asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
+                let direction = 'BEARISH TREND';
+                let commentary = '';
+                
+                if (asset.indicators) {
+                  const rsiVal = asset.indicators.rsi !== undefined ? asset.indicators.rsi.toFixed(1) : 'N/A';
+                  if (isBullish) {
+                    direction = 'BULLISH TREND';
+                    commentary = `Harga berada di atas rata-rata pergerakan harian (SMA 20) dan RSI (${rsiVal}) berada di wilayah bullish (>50). Momentum pembeli mendominasi struktur pasar. Sinyal non-contrarian merekomendasikan untuk mengikuti tren naik utama (Buy Strength) dengan menargetkan area resisten berikutnya.`;
+                  } else {
+                    direction = 'BEARISH TREND';
+                    commentary = `Harga ditransaksikan di bawah SMA 20 dan RSI (${rsiVal}) berada di wilayah bearish (<50). Tren utama didominasi oleh penjual. Sinyal non-contrarian merekomendasikan untuk mengikuti momentum penurunan utama (Sell Rallies) untuk menargetkan level support terendah berikutnya.`;
+                  }
+                } else {
+                  commentary = `Data tren tidak tersedia.`;
+                }
 
+                return (
+                  <div class="rounded-3xl border border-white/5 bg-zinc-900/20 p-6 flex flex-col justify-between">
+                    <div>
+                      <div class="flex items-center justify-between border-b border-white/5 pb-3 mb-3">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-zinc-400 font-heading">Non-Contrarian Signal</h4>
+                        <span class={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                          isBullish ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          {direction}
+                        </span>
+                      </div>
+                      
+                      <p class="text-xs text-zinc-300 leading-relaxed font-sans">{commentary}</p>
+
+                      {asset.indicators && asset.indicators.fibonacci && asset.indicators.fibonacci.levels && (() => {
+                        const levels = asset.indicators.fibonacci.levels;
+                        const formatLevel = (val) => val !== undefined && val !== null ? val.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 }) : 'N/A';
+                        return (
+                          <div class="mt-4 pt-4 border-t border-white/5">
+                            <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 font-mono">Fibonacci Levels (Last 30 Candles)</p>
+                            <ul class="space-y-1 text-xs font-mono text-zinc-300">
+                              <li class="flex items-center justify-between border-b border-white/[0.03] pb-0.5">
+                                <span class="text-zinc-500">0.618 (Golden Pocket)</span>
+                                <span class="text-green-400 font-bold">{formatLevel(levels['0.618'])}</span>
+                              </li>
+                              <li class="flex items-center justify-between border-b border-white/[0.03] pb-0.5">
+                                <span class="text-zinc-500">0.500 (Mid Point)</span>
+                                <span class="text-green-400 font-bold">{formatLevel(levels['0.500'])}</span>
+                              </li>
+                              <li class="flex items-center justify-between">
+                                <span class="text-zinc-500">0.786 (Limit Support)</span>
+                                <span class="text-zinc-400">{formatLevel(levels['0.786'])}</span>
+                              </li>
+                            </ul>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}
