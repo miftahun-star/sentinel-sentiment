@@ -1625,8 +1625,8 @@
             </div>
 
             {/* Main Workspace Layout */}
-            <div class="mt-6 grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
-              {/* Left Column: Candlestick Canvas Chart */}
+            <div class="mt-6 grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
+              {/* Left Column: Candlestick Canvas Chart & Tabs */}
               <div>
                 <div class="flex items-center justify-between mb-3">
                   <div class="flex items-center gap-3">
@@ -1679,171 +1679,44 @@
                     <canvas ref={overlayCanvasRef} class="absolute top-0 left-0 pointer-events-none w-full h-full z-10"></canvas>
                   </div>
                 </div>
-              </div>
 
-              {/* Right Column: Live Positioning Metrics & Sessions */}
-              <div class="flex flex-col gap-4">
-                {/* Metric Summary */}
-                <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-5 flex-1 flex flex-col justify-between">
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Positioning Metrics</p>
-                    <div class="space-y-2 mb-4">
-                      <div class="flex justify-between text-xs font-bold font-mono">
-                        <span class="text-green-400">LONG: {longPct}%</span>
-                        <span class="text-orange-400">SHORT: {shortPct}%</span>
-                      </div>
-                      <div class="relative h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-                        <div style={{ width: `${longPct}%` }} class="absolute left-0 top-0 h-full bg-green-500"></div>
-                        <div style={{ width: `${shortPct}%` }} class="absolute right-0 top-0 h-full bg-orange-500"></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="grid grid-cols-2 gap-2 text-center mb-3">
-                    <div class="rounded-xl bg-zinc-900/40 p-2.5">
-                      <span class="block text-[10px] text-zinc-500 uppercase">RSI (14)</span>
-                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators ? asset.indicators.rsi : 'N/A'}</span>
-                    </div>
-                    <div class="rounded-xl bg-zinc-900/40 p-2.5">
-                      <span class="block text-[10px] text-zinc-500 uppercase">Bollinger %B</span>
-                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators ? asset.indicators.percentB : 'N/A'}</span>
-                    </div>
-                  </div>
-
-                  {asset.indicators && (
-                    <div class="border-t border-white/5 pt-3 space-y-2 text-xs font-mono text-zinc-400">
-                      <div class="flex justify-between">
-                        <span>Stochastic %K / %D</span>
-                        <span class="text-white font-bold">
-                          {asset.indicators.stochastic ? `${asset.indicators.stochastic.k} / ${asset.indicators.stochastic.d}` : 'N/A'}
-                        </span>
-                      </div>
-                      <div class="flex justify-between">
-                        <span>MACD / Signal</span>
-                        <span class="text-white font-bold">
-                          {asset.indicators.macd ? `${asset.indicators.macd.macd} / ${asset.indicators.macd.signal}` : 'N/A'}
-                        </span>
-                      </div>
-                      <div class="flex justify-between">
-                        <span>EMA50 Trend Line</span>
-                        <span class="text-blue-400 font-bold">
-                          {asset.indicators.ema50 ? asset.indicators.ema50.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 }) : 'N/A'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                {/* Tabs for Plan or Indicators */}
+                <div class="mt-5 flex border-b border-white/5">
+                  <button 
+                    onClick={() => setActiveTab('plan')}
+                    class={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                      activeTab === 'plan' ? 'border-green-500 text-green-400' : 'border-transparent text-zinc-400'
+                    }`}
+                  >
+                    Contrarian Setup & Fibs
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('indicators')}
+                    class={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                      activeTab === 'indicators' ? 'border-green-500 text-green-400' : 'border-transparent text-zinc-400'
+                    }`}
+                  >
+                    Extended Technical Metrics
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('sessions')}
+                    class={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                      activeTab === 'sessions' ? 'border-green-500 text-green-400' : 'border-transparent text-zinc-400'
+                    }`}
+                  >
+                    HFM Hours & Sessions
+                  </button>
                 </div>
 
-                {/* HFM Market Sessions & Timeline */}
-                {(() => {
-                  const sessionData = getActiveSessions();
-                  const hoursInfo = getAssetTradingHours(asset);
+                {/* Tab 1 Content: Fibonacci Setup */}
+                {activeTab === 'plan' && setup && asset.indicators && asset.indicators.fibonacci && asset.indicators.fibonacci.levels && (() => {
+                  const levels = asset.indicators.fibonacci.levels;
+                  const formatLevel = (val) => val !== undefined && val !== null ? val.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 }) : 'N/A';
                   return (
-                    <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-4 text-xs font-mono">
-                      <div class="flex justify-between items-center mb-3">
-                        <span class="text-zinc-500 uppercase text-[9px] font-bold">Active Sessions</span>
-                        <span class="text-[9px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded font-bold animate-pulse">
-                          {sessionData.currentWibTimeStr} WIB
-                        </span>
-                      </div>
-                      <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
-                        <div class={`rounded-lg p-2 border ${sessionData.sessions.includes('Asia (Tokyo)') ? 'border-green-500/30 bg-green-500/5 text-green-400' : 'border-white/5 text-zinc-600'}`}>
-                          <span>TOKYO</span>
-                        </div>
-                        <div class={`rounded-lg p-2 border ${sessionData.sessions.includes('Eropa (London)') ? 'border-green-500/30 bg-green-500/5 text-green-400' : 'border-white/5 text-zinc-600'}`}>
-                          <span>LONDON</span>
-                        </div>
-                        <div class={`rounded-lg p-2 border ${sessionData.sessions.includes('Amerika (New York)') ? 'border-green-500/30 bg-green-500/5 text-green-400' : 'border-white/5 text-zinc-600'}`}>
-                          <span>NEW YORK</span>
-                        </div>
-                      </div>
-                      <p class="mt-2 text-[10px] text-zinc-500 leading-tight">
-                        Peak: {hoursInfo.peakSession}
-                      </p>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-
-            {/* Lower Row: Comprehensive Technical Playbooks & AI Verdict */}
-            <div class="mt-6 grid gap-6 grid-cols-1 md:grid-cols-3 items-stretch">
-              
-              {/* Card 1: AI Workspace & Sentinel Verdict */}
-              {(() => {
-                const aiAssess = getAntigravityAssessment(asset);
-                const sentinelVerdict = getSentinelVerdict(asset);
-                return (
-                  <div class="rounded-3xl border border-violet-500/20 bg-violet-950/[0.03] p-6 flex flex-col justify-between gap-4">
-                    <div>
-                      <div class="flex items-center justify-between border-b border-white/5 pb-3">
-                        <div class="flex items-center gap-2">
-                          <span class="text-violet-400 text-sm">✦</span>
-                          <h4 class="text-xs font-bold uppercase tracking-wider text-violet-400 font-heading">Antigravity AI Assessment</h4>
-                        </div>
-                        <span class={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                          aiAssess.isBullish ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        }`}>
-                          {aiAssess.isBullish ? 'BUY BIAS' : 'SELL BIAS'}
-                        </span>
-                      </div>
-                      
-                      <div class="mt-4 grid grid-cols-2 gap-3 text-xs border-b border-white/5 pb-3">
-                        <div>
-                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Rekomendasi TF</span>
-                          <p class="text-white font-bold font-mono mt-0.5">{aiAssess.recommendedTimeframe}</p>
-                        </div>
-                        <div>
-                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Zona Entry</span>
-                          <p class="text-white font-bold font-mono mt-0.5">{aiAssess.entry}</p>
-                        </div>
-                        <div>
-                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Stop Loss (SL)</span>
-                          <p class="text-red-400 font-bold font-mono mt-0.5">{aiAssess.sl}</p>
-                        </div>
-                        <div>
-                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Take Profit (TP)</span>
-                          <p class="text-green-400 font-bold font-mono mt-0.5">{aiAssess.tp}</p>
-                        </div>
-                      </div>
-
-                      <div class="mt-4">
-                        <p class="text-xs text-zinc-300 leading-relaxed italic font-sans">"{aiAssess.analysisText}"</p>
-                      </div>
-                    </div>
-
-                    <div class="mt-4 pt-4 border-t border-white/5">
-                      <div class="flex items-center justify-between">
-                        <h4 class="text-xs font-bold uppercase tracking-wider text-zinc-400 font-heading">Sentinel Conflux Verdict</h4>
-                        <span class={`rounded-full px-2 py-0.5 text-[9px] font-bold ${sentinelVerdict.verdictClass}`}>
-                          {sentinelVerdict.verdictText}
-                        </span>
-                      </div>
-                      <p class="mt-2 text-xs text-zinc-400 leading-relaxed font-sans">{sentinelVerdict.explanation}</p>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Card 2: Contrarian Stance & Harmonic Patterns */}
-              <div class="rounded-3xl border border-white/5 bg-white/[0.01] p-6 flex flex-col justify-between gap-4">
-                <div>
-                  <ContrarianPlaybook asset={asset} timeframe={timeframe} />
-                </div>
-              </div>
-
-              {/* Card 3: Non-Contrarian Trend Following & Fibonacci setup */}
-              <div class="rounded-3xl border border-white/5 bg-white/[0.01] p-6 flex flex-col justify-between gap-4">
-                <div>
-                  <TrendFollowingPlaybook asset={asset} />
-                  
-                  {asset.indicators && asset.indicators.fibonacci && asset.indicators.fibonacci.levels && (() => {
-                    const levels = asset.indicators.fibonacci.levels;
-                    const formatLevel = (val) => val !== undefined && val !== null ? val.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 }) : 'N/A';
-                    return (
-                      <div class="mt-5 pt-5 border-t border-white/5">
-                        <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 font-mono">Fibonacci Plan (Last 30 Candles)</p>
-                        <ul class="space-y-1.5 text-xs font-mono text-zinc-300">
+                    <div class="mt-4 grid grid-cols-2 gap-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4">
+                      <div>
+                        <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Fibonacci Levels (Last 30 Candles)</p>
+                        <ul class="mt-2 space-y-1.5 text-xs font-mono text-zinc-300">
                           <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
                             <span class="text-zinc-500">0.000 (Swing {setup.isBullish ? 'High' : 'Low'})</span>
                             <span class="text-zinc-400 font-bold">{formatLevel(levels['0.000'])}</span>
@@ -1856,28 +1729,266 @@
                             <span>0.500 (Mid Point)</span>
                             <span class="font-bold">{formatLevel(levels['0.500'])}</span>
                           </li>
+                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                            <span class="text-zinc-500">0.382 (Fib Level)</span>
+                            <span>{formatLevel(levels['0.382'])}</span>
+                          </li>
+                          <li class="flex items-center justify-between border-b border-white/[0.03] pb-1">
+                            <span class="text-zinc-500">0.786 (Limit Support)</span>
+                            <span>{formatLevel(levels['0.786'])}</span>
+                          </li>
                           <li class="flex items-center justify-between">
                             <span class="text-zinc-500">1.000 (Swing {setup.isBullish ? 'Low' : 'High'})</span>
                             <span class="text-zinc-400">{formatLevel(levels['1.000'])}</span>
                           </li>
                         </ul>
-                        <div class="mt-3 grid grid-cols-2 gap-2 text-[10px] text-zinc-400">
-                          <div class="rounded-lg bg-zinc-900/40 p-2">
-                            <span class="block text-zinc-500 font-mono">Limit Entry Range</span>
-                            <span class="font-bold text-white mt-0.5 block">{setup.entryRange}</span>
+                      </div>
+
+                      <div>
+                        <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Trading Plan</p>
+                        <div class="mt-2 space-y-3">
+                          <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
+                            <span class="block text-[9px] uppercase text-zinc-500 font-mono">Limit Entry Zone</span>
+                            <span class="text-xs font-bold text-white font-mono mt-0.5">{setup.entryRange}</span>
                           </div>
-                          <div class="rounded-lg bg-zinc-900/40 p-2">
-                            <span class="block text-zinc-500 font-mono">Fib Stop Loss</span>
-                            <span class="font-bold text-red-400 mt-0.5 block">{setup.stopLoss}</span>
+                          <div class="rounded-lg bg-zinc-900/50 p-2 border border-white/5">
+                            <span class="block text-[9px] uppercase text-zinc-500 font-mono">Stop Loss (SL)</span>
+                            <span class="text-xs font-bold text-red-400 font-mono mt-0.5">{setup.stopLoss}</span>
                           </div>
                         </div>
                       </div>
-                    );
-                  })()}
-                </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Tab 2 Content: Extended Metrics */}
+                {activeTab === 'indicators' && asset.indicators ? (
+                  <div class="mt-4 grid grid-cols-2 gap-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4 text-xs font-mono">
+                    <div class="space-y-3">
+                      <div>
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Stochastic Oscillator</span>
+                        <div class="mt-1 flex items-center justify-between text-zinc-300">
+                          <span>%K Line: <span class="text-white font-bold">{asset.indicators.stochastic ? asset.indicators.stochastic.k : 'N/A'}</span></span>
+                          <span>%D Signal: <span class="text-zinc-400 font-bold">{asset.indicators.stochastic ? asset.indicators.stochastic.d : 'N/A'}</span></span>
+                        </div>
+                        <span class="text-[10px] text-zinc-500 block mt-0.5">
+                          {asset.indicators.stochastic ? (asset.indicators.stochastic.k < 20 ? 'Oversold (Bullish Bias)' : asset.indicators.stochastic.k > 80 ? 'Overbought (Bearish Bias)' : 'Neutral') : 'N/A'}
+                        </span>
+                      </div>
+
+                      <div class="border-t border-white/5 pt-2">
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">MACD Indicator</span>
+                        <div class="mt-1 space-y-0.5 text-[11px]">
+                          <div class="flex justify-between"><span>MACD Line</span><span class="text-white">{asset.indicators.macd ? asset.indicators.macd.macd : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Signal Line</span><span class="text-zinc-400">{asset.indicators.macd ? asset.indicators.macd.signal : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Histogram</span><span class={asset.indicators.macd && asset.indicators.macd.histogram >= 0 ? 'text-green-400' : 'text-red-400'}>{asset.indicators.macd ? asset.indicators.macd.histogram : 'N/A'}</span></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="space-y-3">
+                      <div>
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Ichimoku Cloud Components</span>
+                        <div class="mt-1 space-y-0.5 text-[11px]">
+                          <div class="flex justify-between"><span>Tenkan-sen (9)</span><span class="text-white">{asset.indicators.ichimoku ? asset.indicators.ichimoku.tenkan : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Kijun-sen (26)</span><span class="text-zinc-400">{asset.indicators.ichimoku ? asset.indicators.ichimoku.kijun : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Senkou Span A</span><span class="text-green-400/80">{asset.indicators.ichimoku ? asset.indicators.ichimoku.spanA : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>Senkou Span B</span><span class="text-red-400/80">{asset.indicators.ichimoku ? asset.indicators.ichimoku.spanB : 'N/A'}</span></div>
+                        </div>
+                      </div>
+
+                      <div class="border-t border-white/5 pt-2">
+                        <span class="block text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Moving Averages</span>
+                        <div class="mt-1 space-y-0.5 text-[11px]">
+                          <div class="flex justify-between"><span>SMA 20 (Mid BB)</span><span class="text-white">{asset.indicators.sma20 !== undefined && asset.indicators.sma20 !== null ? asset.indicators.sma20 : 'N/A'}</span></div>
+                          <div class="flex justify-between"><span>EMA 50 (Trend Line)</span><span class="text-blue-400">{asset.indicators.ema50 !== undefined && asset.indicators.ema50 !== null ? asset.indicators.ema50 : 'N/A'}</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  activeTab === 'indicators' && <div class="mt-4 rounded-2xl border border-white/5 bg-white/[0.01] p-6 text-center text-xs text-zinc-500">Data indikator tidak tersedia.</div>
+                )}
+
+                {/* Tab 3 Content: HFM Market Hours & Sessions */}
+                {activeTab === 'sessions' && (() => {
+                  const sessionData = getActiveSessions();
+                  const hoursInfo = getAssetTradingHours(asset);
+                  return (
+                    <div class="mt-4 rounded-2xl border border-white/5 bg-white/[0.01] p-4 text-xs font-mono">
+                      <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div>
+                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Waktu Anda Saat Ini</span>
+                          <p class="text-sm font-bold text-white font-mono mt-0.5">{sessionData.currentWibTimeStr}</p>
+                        </div>
+                        <div class="text-right">
+                          <span class="text-zinc-500 font-mono text-[9px] uppercase">Status Pasar HFM</span>
+                          <div class="mt-0.5">
+                            <span class={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                              asset.type === 'crypto' || (new Date().getUTCDay() !== 6 && new Date().getUTCDay() !== 0)
+                                ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}>
+                              <span class={`h-1.5 w-1.5 rounded-full ${
+                                asset.type === 'crypto' || (new Date().getUTCDay() !== 6 && new Date().getUTCDay() !== 0)
+                                  ? 'bg-green-400 animate-pulse'
+                                  : 'bg-red-400'
+                              }`}></span>
+                              {asset.type === 'crypto' || (new Date().getUTCDay() !== 6 && new Date().getUTCDay() !== 0) ? 'OPEN / RUNNING' : 'CLOSED (WEEKEND)'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="mt-4 space-y-3">
+                        <div class="rounded-xl bg-zinc-900/40 p-3 border border-white/5">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">Jam Perdagangan HFM (WIB)</span>
+                          <p class="text-white font-bold mt-1 text-[11px] leading-relaxed">{hoursInfo.hfmHours}</p>
+                        </div>
+
+                        <div class="rounded-xl bg-zinc-900/40 p-3 border border-white/5">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono font-bold">Sesi Puncak Volatilitas & Rekomendasi</span>
+                          <p class="text-zinc-300 mt-1 text-[11px] leading-relaxed">{hoursInfo.peakSession}</p>
+                        </div>
+
+                        <div class="mt-4">
+                          <span class="block text-[9px] uppercase text-zinc-500 font-mono font-bold mb-2">Visual Session Timeline</span>
+                          <div class="grid grid-cols-3 gap-2">
+                            <div class={`rounded-xl p-3 border text-center transition-all ${
+                              sessionData.sessions.includes('Asia (Tokyo)')
+                                ? 'border-green-500/30 bg-green-500/[0.03] text-green-400'
+                                : 'border-white/5 bg-zinc-900/20 text-zinc-500'
+                            }`}>
+                              <span class="block text-[10px] font-bold">SESI ASIA</span>
+                              <span class="block text-[9px] font-mono mt-0.5">06:00 - 14:00</span>
+                              {sessionData.sessions.includes('Asia (Tokyo)') && (
+                                <span class="inline-block mt-2 rounded bg-green-500/10 px-1.5 py-0.5 text-[8px] font-bold animate-pulse">ACTIVE</span>
+                              )}
+                            </div>
+
+                            <div class={`rounded-xl p-3 border text-center transition-all ${
+                              sessionData.sessions.includes('Eropa (London)')
+                                ? 'border-green-500/30 bg-green-500/[0.03] text-green-400'
+                                : 'border-white/5 bg-zinc-900/20 text-zinc-500'
+                            }`}>
+                              <span class="block text-[10px] font-bold">SESI LONDON</span>
+                              <span class="block text-[9px] font-mono mt-0.5">13:00 - 21:00</span>
+                              {sessionData.sessions.includes('Eropa (London)') && (
+                                <span class="inline-block mt-2 rounded bg-green-500/10 px-1.5 py-0.5 text-[8px] font-bold animate-pulse">ACTIVE</span>
+                              )}
+                            </div>
+
+                            <div class={`rounded-xl p-3 border text-center transition-all ${
+                              sessionData.sessions.includes('Amerika (New York)')
+                                ? 'border-green-500/30 bg-green-500/[0.03] text-green-400'
+                                : 'border-white/5 bg-zinc-900/20 text-zinc-500'
+                            }`}>
+                              <span class="block text-[10px] font-bold">SESI NY</span>
+                              <span class="block text-[9px] font-mono mt-0.5">20:00 - 04:00</span>
+                              {sessionData.sessions.includes('Amerika (New York)') && (
+                                <span class="inline-block mt-2 rounded bg-green-500/10 px-1.5 py-0.5 text-[8px] font-bold animate-pulse">ACTIVE</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Antigravity AI Assessment & Sentinel Verdict Panel */}
+                {(() => {
+                  const aiAssess = getAntigravityAssessment(asset);
+                  const sentinelVerdict = getSentinelVerdict(asset);
+                  return (
+                    <div class="mt-5 space-y-4">
+                      {/* Antigravity AI Personal Assessment */}
+                      <div class="rounded-2xl border border-violet-500/25 bg-violet-950/10 p-5 shadow-lg shadow-violet-950/10">
+                        <div class="flex items-center justify-between border-b border-white/5 pb-2.5">
+                          <div class="flex items-center gap-2">
+                            <span class="text-violet-400 text-sm">✦</span>
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-violet-400 font-heading">Antigravity AI Assessment (Personal)</h4>
+                          </div>
+                          <span class={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            aiAssess.isBullish ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}>
+                            {aiAssess.isBullish ? 'BUY BIAS' : 'SELL BIAS'}
+                          </span>
+                        </div>
+                        <div class="mt-3 grid grid-cols-2 gap-3 text-xs border-b border-white/5 pb-3">
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Rekomendasi Timeframe</span>
+                            <p class="text-white font-bold font-mono mt-0.5">{aiAssess.recommendedTimeframe}</p>
+                          </div>
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Zona Entry Pribadi</span>
+                            <p class="text-white font-bold font-mono mt-0.5">{aiAssess.entry}</p>
+                          </div>
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Stop Loss (SL)</span>
+                            <p class="text-red-400 font-bold font-mono mt-0.5">{aiAssess.sl}</p>
+                          </div>
+                          <div>
+                            <span class="text-zinc-500 font-mono text-[9px] uppercase">Take Profit (TP)</span>
+                            <p class="text-green-400 font-bold font-mono mt-0.5">{aiAssess.tp}</p>
+                          </div>
+                        </div>
+                        <div class="mt-3">
+                          <p class="text-xs text-zinc-300 leading-relaxed italic font-sans">"{aiAssess.analysisText}"</p>
+                        </div>
+                      </div>
+
+                      {/* Sentinel Verdict */}
+                      <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
+                        <div class="flex items-center justify-between border-b border-white/5 pb-2.5">
+                          <h4 class="text-xs font-bold uppercase tracking-wider text-zinc-400 font-heading">Sentinel Conflux Verdict</h4>
+                          <span class={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${sentinelVerdict.verdictClass}`}>
+                            {sentinelVerdict.verdictText}
+                          </span>
+                        </div>
+                        <p class="mt-3 text-xs text-zinc-300 leading-relaxed font-sans">{sentinelVerdict.explanation}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
+              {/* Right Column: Sentiment & Playbook */}
+              <div class="flex flex-col gap-4">
+                {/* Metric Summary */}
+                <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Positioning Metrics</p>
+                  
+                  <div class="space-y-2 mb-4">
+                    <div class="flex justify-between text-xs font-bold font-mono">
+                      <span class="text-green-400">LONG: {longPct}%</span>
+                      <span class="text-orange-400">SHORT: {shortPct}%</span>
+                    </div>
+                    <div class="relative h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                      <div style={{ width: `${longPct}%` }} class="absolute left-0 top-0 h-full bg-green-500"></div>
+                      <div style={{ width: `${shortPct}%` }} class="absolute right-0 top-0 h-full bg-orange-500"></div>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="rounded-xl bg-zinc-900/40 p-2.5">
+                      <span class="block text-[10px] text-zinc-500 uppercase">RSI (14)</span>
+                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators ? asset.indicators.rsi : 'N/A'}</span>
+                    </div>
+                    <div class="rounded-xl bg-zinc-900/40 p-2.5">
+                      <span class="block text-[10px] text-zinc-500 uppercase">Bollinger %B</span>
+                      <span class="mt-1 block text-lg font-bold text-white font-mono">{asset.indicators ? asset.indicators.percentB : 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Playbooks Section (Contrarian & Non-Contrarian Trend Following) - Stacked vertically (berbanjar ke bawah) for proportional layout */}
+                <div class="flex flex-col gap-4">
+                  <ContrarianPlaybook asset={asset} timeframe={timeframe} />
+                  <TrendFollowingPlaybook asset={asset} />
+                </div>
             </div>
+          </div>
 
             {/* Modal Footer */}
             <div class="mt-6 border-t border-white/5 pt-4 flex items-center justify-between font-mono text-[10px] text-zinc-500">
