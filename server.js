@@ -224,7 +224,7 @@ function getPivots(candles, strength = 3) {
 function detectHarmonics(candles, period = 'H1') {
   if (candles.length < 50) return null;
   
-  const pivots = getPivots(candles, 3);
+  const pivots = getPivots(candles, 6);
   
   const len = candles.length;
   const isBullish = candles[len - 1].close > candles[Math.max(0, len - 20)].close;
@@ -395,11 +395,11 @@ function detectHarmonics(candles, period = 'H1') {
         XD: parseFloat((isBullish ? 0.786 : 0.886).toFixed(3))
       },
       points: {
-        X: { price: pX_price, index: xIdx, time: candles[xIdx].time },
-        A: { price: pA_price, index: aIdx, time: candles[aIdx].time },
-        B: { price: pB_price, index: bIdx, time: candles[bIdx].time },
-        C: { price: pC_price, index: cIdx, time: candles[cIdx].time },
-        D: { price: pD_price, index: dIdx, time: candles[dIdx].time }
+        X: { price: pX_price, index: xIdx, time: candles[xIdx].time, type: isBullish ? 'low' : 'high' },
+        A: { price: pA_price, index: aIdx, time: candles[aIdx].time, type: isBullish ? 'high' : 'low' },
+        B: { price: pB_price, index: bIdx, time: candles[bIdx].time, type: isBullish ? 'low' : 'high' },
+        C: { price: pC_price, index: cIdx, time: candles[cIdx].time, type: isBullish ? 'high' : 'low' },
+        D: { price: pD_price, index: dIdx, time: candles[dIdx].time, type: isBullish ? 'low' : 'high' }
       },
       isForming: true
     };

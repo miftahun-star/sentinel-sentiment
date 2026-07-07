@@ -2016,81 +2016,144 @@
       }, [selectedAssetId]);
 
       const calculateAiRecommendation = () => {
-        const balance = parseFloat(accountSizeStr) || 0;
-        const risk = parseFloat(riskValueStr) || 0;
-        const reward = parseFloat(rewardValueStr) || 0;
-        const entry = parseFloat(customEntryStr) || 0;
-        const sl = parseFloat(customSLStr) || 0;
-        const tp = parseFloat(customTPStr) || 0;
-        const lots = parseFloat(lotsInputStr) || 0;
+        // Parse inputs, using defaults if empty
+        const balance = parseFloat(accountSizeStr) || 10000;
+        const entry = parseFloat(customEntryStr) || (liveAssetData ? liveAssetData.price : 0);
+        const reward = parseFloat(rewardValueStr) || 2;
+        
+        let riskVal = parseFloat(riskValueStr) || 0;
         const expProfit = parseFloat(expectedProfitStr) || 0;
+        const lots = parseFloat(lotsInputStr) || 0;
+        const slInput = parseFloat(customSLStr) || 0;
+        const tpInput = parseFloat(customTPStr) || 0;
         const isBuyMode = tradeDirection === 'BUY';
 
-        let recSL = sl;
-        let recTP = tp;
-        let recLots = lots;
-        let recRR = '';
+        let logs = [];
+        let adviceList = [];
         let safetyRating = 'AMAT AMAN';
         let safetyColor = 'text-green-400';
-        let adviceList = [];
-        let logs = [];
 
         if (entry <= 0) {
           setAiCalcResult({
             recSL: 'N/A', recTP: 'N/A', recLots: 'N/A', rr: 'N/A',
             safetyRating: 'INVALID', safetyColor: 'text-red-400',
-            advice: 'Silakan masukkan Entry Price untuk memulai kalkulasi AI.',
+            advice: 'Silakan masukkan Entry Price (atau tunggu live price terisi) untuk memulai kalkulasi AI.',
             logs: ['Error: Entry Price tidak boleh kosong.']
           });
           return;
         }
 
         logs.push(`Analisis Sizing: ${activeAsset.name} (${activeAsset.id})`);
+        logs.push(`Saldo Akun (Balance): $${balance.toLocaleString()}`);
         logs.push(`Arah Posisi: ${tradeDirection} di harga ${entry.toLocaleString()}`);
 
-        if (balance > 0) {
-          logs.push(`Saldo Akun Aktif: $${balance.toLocaleString()}`);
+        // 1. Solve for Risk & Expected Profit
+        let riskUSD = 0;
+        let expectedProfitUSD = expProfit;
+
+        if (expProfit > 0) {
+          // If Expected Profit is manual, and risk is not set, solve riskUSD = expProfit / reward
+          if (riskVal <= 0) {
+            riskUSD = expProfit / reward;
+            riskVal = (riskUSD / balance) * 100;
+            logs.push(`Expected Profit manual: $${expProfit.toLocaleString()}`);
+            logs.push(`Solusi Resiko AI (R:R 1:${reward}): $${riskUSD.toFixed(2)} (${riskVal.toFixed(2)}% dari modal)`);
+          } else {
+            riskUSD = riskUnit === '%' ? (balance * (riskVal / 100)) : riskVal;
+            logs.push(`Resiko manual: $${riskUSD.toLocaleString()}`);
+            logs.push(`Expected Profit manual: $${expProfit.toLocaleString()}`);
+          }
+        } else {
+          // If Expected Profit is empty, solve expectedProfitUSD = riskUSD * reward
+          if (riskVal <= 0) {
+            riskVal = 1; // default 1%
+          }
+          riskUSD = riskUnit === '%' ? (balance * (riskVal / 100)) : riskVal;
+          expectedProfitUSD = riskUSD * reward;
+          logs.push(`Resiko: $${riskUSD.toFixed(2)} (${riskUnit === '%' ? riskVal : (riskVal / balance * 100).toFixed(2)}%)`);
+          logs.push(`Solusi Target Profit AI (R:R 1:${reward}): $${expectedProfitUSD.toFixed(2)}`);
         }
 
-        if (sl <= 0) {
-          recSL = isBuyMode ? entry * 0.99 : entry * 1.01;
-          adviceList.push("Stop Loss Anda kosong. AI mematok default 1.0% dari harga entri.");
-        }
-        if (tp <= 0) {
-          recTP = isBuyMode ? entry * 1.02 : entry * 0.98;
-          adviceList.push("Take Profit Anda kosong. AI mematok default 2.0% dari harga entri.");
-        }
+        // Contract size definition for Forex / Gold
+        const contractSize = activeAsset.id === 'XAU' ? 100 : (activeAsset.type === 'forex' ? 100000 : 1);
 
-        const slDistance = Math.abs(entry - recSL);
-        const tpDistance = Math.abs(recTP - entry);
-
-        if (slDistance > 0) {
-          const rr = tpDistance / slDistance;
-          recRR = `1 : ${rr.toFixed(2)}`;
-          logs.push(`Rasio Risk to Reward: ${recRR}`);
-          if (rr < 1.5) {
-            safetyRating = 'MODERAT / KURANG IDEAL';
-            safetyColor = 'text-orange-400';
-            adviceList.push("Rasio Risk-to-Reward berada di bawah 1:1.5. Disarankan melebarkan jarak TP.");
+        // 2. Solve for Stop Loss (SL)
+        let recSL = slInput;
+        if (slInput <= 0) {
+          // If SL is empty, check if we can solve it from Lots
+          if (lots > 0) {
+            const slDistanceVal = activeAsset.type === 'forex' 
+              ? (activeAsset.id === 'USDJPY' ? (riskUSD * 158.0) / (lots * contractSize) : riskUSD / (lots * contractSize))
+              : riskUSD / lots;
+            recSL = isBuyMode ? entry - slDistanceVal : entry + slDistanceVal;
+            adviceList.push(`Stop Loss kosong. Dihitung otomatis dari Lot manual Anda: ${recSL.toFixed(entry > 100 ? 2 : 5)}.`);
+          } else {
+            // Default SL based on wicks / Fibs / default 1%
+            const fib = liveAssetData && liveAssetData.indicators ? liveAssetData.indicators.fibonacci : null;
+            if (fib && fib.levels) {
+              recSL = isBuyMode ? fib.levels['0.786'] * 0.998 : fib.levels['0.786'] * 1.002;
+              adviceList.push("Stop Loss kosong. Menggunakan rekomendasi Fibonacci Level 0.786.");
+            } else {
+              recSL = isBuyMode ? entry * 0.99 : entry * 1.01;
+              adviceList.push("Stop Loss kosong. Menggunakan default 1.0% dari harga entri.");
+            }
           }
         }
 
-        if (expProfit > 0) {
-          logs.push(`Expected Profit manual: $${expProfit.toLocaleString()}`);
-          if (balance > 0) {
-            const expPct = (expProfit / balance) * 100;
-            logs.push(`Rencana Keuntungan: ${expPct.toFixed(2)}% dari modal`);
-            if (expPct > 15) {
-              adviceList.push("PERINGATAN: Target keuntungan Anda sangat agresif (> 15% modal). Pastikan leverage dan margin aman.");
+        // 3. Solve for Take Profit (TP)
+        let recTP = tpInput;
+        const slDistance = Math.abs(entry - recSL);
+        if (tpInput <= 0) {
+          if (slDistance > 0) {
+            // Solve TP from SL and reward ratio
+            recTP = isBuyMode ? entry + slDistance * reward : entry - slDistance * reward;
+            adviceList.push(`Take Profit kosong. Dihitung dari rasio R:R (1:${reward}): ${recTP.toFixed(entry > 100 ? 2 : 5)}.`);
+          } else {
+            // Default TP
+            recTP = isBuyMode ? entry * 1.02 : entry * 0.98;
+            adviceList.push("Take Profit kosong. Menggunakan default 2.0% dari harga entri.");
+          }
+        }
+
+        const finalSLDistance = Math.abs(entry - recSL);
+        const finalTPDistance = Math.abs(recTP - entry);
+
+        // 4. Solve for Lots (Position Size)
+        let recLots = lots;
+        if (lots <= 0) {
+          if (finalSLDistance > 0) {
+            let calculatedLots = 0;
+            if (activeAsset.type === 'forex') {
+              calculatedLots = riskUSD / (finalSLDistance * contractSize);
+              if (activeAsset.id === 'USDJPY') {
+                calculatedLots = (riskUSD * 158.0) / (finalSLDistance * contractSize);
+              }
+            } else {
+              calculatedLots = riskUSD / finalSLDistance;
             }
+            recLots = calculatedLots;
+            logs.push(`Solusi Lot AI (Ukuran Posisi): ${recLots.toFixed(3)} ${activeAsset.type === 'forex' ? 'Lots' : 'Koin'}`);
+          } else {
+            recLots = 0;
+          }
+        } else {
+          logs.push(`Lot manual: ${lots} ${activeAsset.type === 'forex' ? 'Lots' : 'Koin'}`);
+        }
+
+        // Risk-to-Reward and safety assessment
+        if (finalSLDistance > 0) {
+          const actualRR = finalTPDistance / finalSLDistance;
+          logs.push(`Rasio Risk to Reward Aktif: 1 : ${actualRR.toFixed(2)}`);
+          if (actualRR < 1.5) {
+            safetyRating = 'MODERAT / KURANG IDEAL';
+            safetyColor = 'text-orange-400';
+            adviceList.push("Rasio R:R Anda berada di bawah 1:1.5. Disarankan untuk meminimalkan resiko.");
           }
         }
 
         if (liveAssetData) {
           const longPct = (liveAssetData.buyRatio * 100).toFixed(1);
           const shortPct = (liveAssetData.sellRatio * 100).toFixed(1);
-          logs.push(`Live Sentimen: ${longPct}% Long vs ${shortPct}% Short`);
-
           if (liveAssetData.status === 'TRAPPED_LONG' && tradeDirection === 'BUY') {
             safetyRating = 'BERBAHAYA / HIGH RISK';
             safetyColor = 'text-red-500 animate-pulse';
@@ -2102,37 +2165,6 @@
           }
         }
 
-        if (balance > 0 && risk > 0 && slDistance > 0) {
-          const riskUSD = riskUnit === '%' ? (balance * (risk / 100)) : risk;
-          if (activeAsset.type === 'forex') {
-            const contractSize = activeAsset.id === 'XAU' ? 100 : 100000;
-            let lotVal = riskUSD / (slDistance * contractSize);
-            if (activeAsset.id === 'USDJPY') {
-              lotVal = (riskUSD * 158.0) / (slDistance * contractSize);
-            }
-            recLots = lotVal;
-            logs.push(`Lots Forex/Emas yang disarankan: ${recLots.toFixed(3)} Lots`);
-          } else {
-            recLots = riskUSD / slDistance;
-            logs.push(`Kontrak Kripto yang disarankan: ${recLots.toFixed(3)} Koin`);
-          }
-        }
-
-        if (lots > 0 && balance > 0) {
-          let calculatedRiskUSD = lots * slDistance;
-          if (activeAsset.type === 'forex') {
-            const contractSize = activeAsset.id === 'XAU' ? 100 : 100000;
-            calculatedRiskUSD = lots * slDistance * contractSize;
-          }
-          const riskPct = (calculatedRiskUSD / balance) * 100;
-          logs.push(`Risiko Nyata (Lots manual): $${calculatedRiskUSD.toFixed(2)} (${riskPct.toFixed(2)}% dari saldo)`);
-          if (riskPct > 5) {
-            safetyRating = 'SANGAT AGRESIF / BERBAHAYA';
-            safetyColor = 'text-red-500 animate-pulse';
-            adviceList.push("WARNING: Lot yang dimasukkan manual menyebabkan risiko saldo akun melebihi 5%! Kurangi ukuran lot.");
-          }
-        }
-
         if (adviceList.length === 0) {
           adviceList.push("Manajemen posisi dan risiko Anda sangat aman dan logis berdasarkan kondisi pasar saat ini.");
         }
@@ -2141,7 +2173,7 @@
           recSL: recSL.toFixed(entry > 100 ? 2 : 5),
           recTP: recTP.toFixed(entry > 100 ? 2 : 5),
           recLots: recLots > 0 ? recLots.toFixed(3) : 'Belum ditentukan',
-          rr: recRR || 'Belum dihitung',
+          rr: finalSLDistance > 0 ? `1 : ${(finalTPDistance / finalSLDistance).toFixed(2)}` : 'Belum dihitung',
           safetyRating,
           safetyColor,
           advice: adviceList.join(" "),
