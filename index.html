@@ -1243,35 +1243,24 @@
           const hp = inds.harmonicPattern;
           const pts = hp.points;
 
-           // Safely resolve each point, matching timestamps and snapping to actual candle highs/lows
-           const resolvePoint = (pt, fallbackIdx) => {
-             if (pt && typeof pt === 'object' && pt.price !== undefined) {
-               // 1. Search by exact timestamp first (most robust across server-client boundaries)
-               if (pt.time !== undefined && pt.time !== null) {
-                 const targetTimeSecs = Math.floor(pt.time / 1000);
-                 const foundIdx = tvCandles.findIndex(c => c.time === targetTimeSecs);
-                 if (foundIdx !== -1) {
-                   const candle = tvCandles[foundIdx];
-                   const snappedPrice = pt.type === 'high' ? candle.high : (pt.type === 'low' ? candle.low : pt.price);
-                   return { time: targetTimeSecs, value: snappedPrice };
-                 }
-               }
-               // 2. Fallback to index-based resolution
-               if (pt.index !== undefined && pt.index !== null && !isNaN(pt.index)) {
-                 const idx = Math.max(0, Math.min(tvCandles.length - 1, Math.floor(pt.index)));
-                 if (tvCandles[idx]) {
-                   const candle = tvCandles[idx];
-                   const snappedPrice = pt.type === 'high' ? candle.high : (pt.type === 'low' ? candle.low : pt.price);
-                   return { time: tvCandles[idx].time, value: snappedPrice };
-                 }
-               }
-             }
-             const fallbackVal = (pt && typeof pt === 'object') ? pt.price : pt;
-             const idx = Math.max(0, Math.min(tvCandles.length - 1, fallbackIdx || 0));
-             const timeVal = tvCandles[idx] ? tvCandles[idx].time : Math.floor(Date.now() / 1000);
-             const snappedPrice = (pt && pt.type === 'high') ? (tvCandles[idx] ? tvCandles[idx].high : fallbackVal) : ((pt && pt.type === 'low') ? (tvCandles[idx] ? tvCandles[idx].low : fallbackVal) : fallbackVal);
-             return { time: timeVal, value: snappedPrice };
-           };
+          // Safely resolve each point
+          const resolvePoint = (pt, fallbackIdx) => {
+            if (pt && typeof pt === 'object' && pt.price !== undefined) {
+              if (pt.index !== undefined && pt.index !== null && !isNaN(pt.index)) {
+                const idx = Math.max(0, Math.min(tvCandles.length - 1, Math.floor(pt.index)));
+                if (tvCandles[idx]) {
+                  return { time: tvCandles[idx].time, value: pt.price };
+                }
+              }
+              if (pt.time !== undefined && pt.time !== null && !isNaN(pt.time)) {
+                return { time: Math.floor(pt.time / 1000), value: pt.price };
+              }
+            }
+            const fallbackVal = (pt && typeof pt === 'object') ? pt.price : pt;
+            const idx = Math.max(0, Math.min(tvCandles.length - 1, fallbackIdx || 0));
+            const timeVal = tvCandles[idx] ? tvCandles[idx].time : Math.floor(Date.now() / 1000);
+            return { time: timeVal, value: fallbackVal };
+          };
 
           const pX = resolvePoint(pts.X, 0);
           const pA = resolvePoint(pts.A, Math.floor(tvCandles.length * 0.25));

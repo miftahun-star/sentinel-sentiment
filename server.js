@@ -224,7 +224,7 @@ function getPivots(candles, strength = 3) {
 function detectHarmonics(candles, period = 'H1') {
   if (candles.length < 50) return null;
   
-  const pivots = getPivots(candles, 6);
+  const pivots = getPivots(candles, 3);
   
   const len = candles.length;
   const isBullish = candles[len - 1].close > candles[Math.max(0, len - 20)].close;
