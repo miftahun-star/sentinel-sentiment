@@ -1954,7 +1954,7 @@
               </div>
 
               {/* Right Column: Sentiment & Playbook */}
-              <div class="flex flex-col gap-4">
+              <div class="flex flex-col justify-between gap-4">
                 {/* Metric Summary */}
                 <div class="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
                   <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Positioning Metrics</p>
@@ -1982,13 +1982,13 @@
                   </div>
                 </div>
 
-                {/* Playbooks Section (Contrarian & Non-Contrarian Trend Following) - Stacked vertically (berbanjar ke bawah) for proportional layout */}
-                <div class="flex flex-col gap-4">
+                {/* Playbooks Section (Contrarian & Non-Contrarian Trend Following) */}
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <ContrarianPlaybook asset={asset} timeframe={timeframe} />
                   <TrendFollowingPlaybook asset={asset} />
                 </div>
+              </div>
             </div>
-          </div>
 
             {/* Modal Footer */}
             <div class="mt-6 border-t border-white/5 pt-4 flex items-center justify-between font-mono text-[10px] text-zinc-500">
