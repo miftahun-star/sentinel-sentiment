@@ -332,8 +332,8 @@ function detectHarmonics(candles, period = 'H1') {
         const isBullishForecast = bestMatch.name.toLowerCase().includes('bullish');
         const priceRange = Math.abs(A - X);
         const slPrice = isBullishForecast 
-          ? Math.min(X, D) * 0.992 
-          : Math.max(X, D) * 1.008;
+          ? Math.min(X, D) - priceRange * 0.15
+          : Math.max(X, D) + priceRange * 0.15;
         const tpPrice = isBullishForecast 
           ? D + priceRange * 0.618 
           : D - priceRange * 0.618;
@@ -355,11 +355,11 @@ function detectHarmonics(candles, period = 'H1') {
             XD: parseFloat(displayXD.toFixed(3))
           },
           points: {
-            X: { price: X, index: pX.index, time: candles[pX.index].time },
-            A: { price: A, index: pA.index, time: candles[pA.index].time },
-            B: { price: B, index: pB.index, time: candles[pB.index].time },
-            C: { price: C, index: pC.index, time: candles[pC.index].time },
-            D: { price: D, index: candles.length - 1, time: candles[candles.length - 1].time }
+            X: { price: X, index: pX.index, time: candles[pX.index].time, type: pX.type },
+            A: { price: A, index: pA.index, time: candles[pA.index].time, type: pA.type },
+            B: { price: B, index: pB.index, time: candles[pB.index].time, type: pB.type },
+            C: { price: C, index: pC.index, time: candles[pC.index].time, type: pC.type },
+            D: { price: D, index: candles.length - 1, time: candles[candles.length - 1].time, type: pC.type === 'high' ? 'low' : 'high' }
           }
         };
       }
