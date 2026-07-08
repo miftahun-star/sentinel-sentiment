@@ -1349,21 +1349,28 @@
             ctx.closePath();
             ctx.fill();
 
-            // Draw dashed lines X-A-B-C-D
+            // Draw dashed outlines for XABX and BCDB triangles, plus X-D boundary line
             ctx.strokeStyle = '#eab308';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([3, 3]);
+
+            // Triangle 1: X-A-B-X
             ctx.beginPath();
             ctx.moveTo(cX.x, cX.y);
             ctx.lineTo(cA.x, cA.y);
             ctx.lineTo(cB.x, cB.y);
-            ctx.lineTo(cC.x, cC.y);
-            ctx.lineTo(cD.x, cD.y);
+            ctx.closePath();
             ctx.stroke();
 
-            // Draw straight boundary line X-D
-            ctx.strokeStyle = 'rgba(234, 179, 8, 0.35)';
-            ctx.lineWidth = 1;
+            // Triangle 2: B-C-D-B
+            ctx.beginPath();
+            ctx.moveTo(cB.x, cB.y);
+            ctx.lineTo(cC.x, cC.y);
+            ctx.lineTo(cD.x, cD.y);
+            ctx.closePath();
+            ctx.stroke();
+
+            // Boundary X-D
             ctx.beginPath();
             ctx.moveTo(cX.x, cX.y);
             ctx.lineTo(cD.x, cD.y);
