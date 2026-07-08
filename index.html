@@ -1268,19 +1268,8 @@
           const pC = resolvePoint(pts.C, Math.floor(tvCandles.length * 0.75));
           const pD = resolvePoint(pts.D, tvCandles.length - 1);
 
-          // Add XABCD markers on the candlestick series
-          const labels = ['X', 'A', 'B', 'C', 'D'];
-          const positions = [pX, pA, pB, pC, pD];
-          const markers = positions.map((p, i) => ({
-            time: p.time,
-            position: i % 2 === 0 ? 'belowBar' : 'aboveBar',
-            color: '#eab308',
-            shape: 'circle',
-            text: labels[i],
-          })).filter(m => m.time);
-
-          markers.sort((a, b) => a.time - b.time);
-          candleSeries.setMarkers(markers);
+          // Clear any native candlestick markers to use high-precision canvas markers instead
+          candleSeries.setMarkers([]);
 
           // Redraw shaded triangles XAB and BCD on the overlay canvas
           redrawOverlay = () => {
@@ -1377,6 +1366,40 @@
             ctx.stroke();
 
             ctx.setLineDash([]);
+
+            // Draw XABCD markers directly on the overlay canvas so they connect exactly to the lines
+            const drawMarker = (coords, label, position) => {
+              if (coords.x === null || coords.y === null || isNaN(coords.x) || isNaN(coords.y)) return;
+              
+              // 1. Draw yellow circle
+              ctx.beginPath();
+              ctx.arc(coords.x, coords.y, 4.5, 0, 2 * Math.PI);
+              ctx.fillStyle = '#eab308'; // yellow-500
+              ctx.fill();
+              ctx.strokeStyle = '#09090b'; // dark zinc border to pop
+              ctx.lineWidth = 1.2;
+              ctx.stroke();
+
+              // 2. Draw label text X, A, B, C, D
+              ctx.font = 'bold 11px font-sans';
+              ctx.fillStyle = '#eab308';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              
+              // Determine vertical offset based on position ('above' or 'below')
+              const offset = position === 'above' ? -13 : 13;
+              ctx.fillText(label, coords.x, coords.y + offset);
+            };
+
+            const hpObj = asset.indicators ? asset.indicators.harmonicPattern : null;
+            const patName = (hpObj && hpObj.pattern) ? hpObj.pattern : '';
+            const isBullishPattern = patName.toLowerCase().includes('bullish');
+
+            drawMarker(cX, 'X', isBullishPattern ? 'below' : 'above');
+            drawMarker(cA, 'A', isBullishPattern ? 'above' : 'below');
+            drawMarker(cB, 'B', isBullishPattern ? 'below' : 'above');
+            drawMarker(cC, 'C', isBullishPattern ? 'above' : 'below');
+            drawMarker(cD, 'D', isBullishPattern ? 'below' : 'above');
 
             // Harmonic Forecast Overlay (Arrow, PRZ box, SL line, TP line)
             const hp = asset.indicators ? asset.indicators.harmonicPattern : null;
