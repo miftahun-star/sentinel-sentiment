@@ -162,6 +162,9 @@
       { id: 'DOGE', name: 'Dogecoin', symbol: 'DOGEUSDT', type: 'crypto', apiSymbol: 'DOGEUSDT' },
       { id: 'LINK', name: 'Chainlink', symbol: 'LINKUSDT', type: 'crypto', apiSymbol: 'LINKUSDT' },
       { id: 'TRX', name: 'Tron', symbol: 'TRXUSDT', type: 'crypto', apiSymbol: 'TRXUSDT' },
+      { id: 'HOOD', name: 'Robinhood', symbol: 'HOODUSDT', type: 'crypto', apiSymbol: 'HOODUSDT' },
+      { id: 'LIT', name: 'Lighter', symbol: 'LITUSDT', type: 'crypto', apiSymbol: 'LITUSDT' },
+      { id: 'ANSEM', name: 'Ansem', symbol: 'ANSEMUSDT', type: 'crypto', apiSymbol: 'ANSEMUSDT' },
       
       // XAU (Gold) (Yahoo Finance)
       { id: 'XAU', name: 'Gold Spot', symbol: 'XAUUSD', type: 'forex', apiSymbol: 'GC=F' },
@@ -237,7 +240,7 @@
       { id: 'COPPERUSD', name: 'Copper', symbol: 'COPPERUSD', type: 'forex', apiSymbol: 'HG=F' }
     ];
 
-    const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H2', 'H3', 'H4', 'D1', 'W1', '1M'];
+    const TIMEFRAMES = ['None', 'M1', 'M5', 'M15', 'M30', 'H1', 'H2', 'H3', 'H4', 'D1', 'W1', '1M'];
 
     const STATUS_FILTERS = [
       { key: 'ALL', label: 'All Status' },
@@ -286,7 +289,7 @@
     function App() {
       const [theme, setTheme] = useState(() => localStorage.getItem('sentinel_theme') || 'dark');
       const [activeMainTab, setActiveMainTab] = useState('sentiment');
-      const [selectedTimeframe, setSelectedTimeframe] = useState('H1');
+      const [selectedTimeframe, setSelectedTimeframe] = useState('None');
       const [marketData, setMarketData] = useState({});
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
@@ -349,7 +352,7 @@
 
         try {
           await Promise.all(targetAssets.map(async (asset) => {
-            const activeTf = customTimeframes[asset.id] || timeframe;
+            const activeTf = customTimeframes[asset.id] || (timeframe === 'None' ? 'H1' : timeframe);
             const apiPath = asset.type === 'crypto' ? '/api/sentiment/crypto' : '/api/sentiment/forex';
             const url = `${apiPath}?symbol=${asset.apiSymbol}&period=${activeTf}`;
             
@@ -703,19 +706,33 @@
                       })}
                     </div>
 
-                    <div class="mt-8 flex items-center justify-end gap-3 border-t border-white/5 pt-4">
-                      <button
-                        onClick={() => setActiveAssetsList(ALL_ASSETS.map(a => a.id))}
-                        class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
-                      >
-                        Select All
-                      </button>
-                      <button
-                        onClick={() => setActiveAssetsList([])}
-                        class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
-                      >
-                        Clear All
-                      </button>
+                    <div class="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4">
+                      <div class="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => setActiveAssetsList(ALL_ASSETS.map(a => a.id))}
+                          class="px-3 py-1.5 rounded-lg text-[10px] font-bold text-zinc-400 hover:text-white border border-white/5 hover:border-white/20 transition-all"
+                        >
+                          All
+                        </button>
+                        <button
+                          onClick={() => setActiveAssetsList(ALL_ASSETS.filter(a => a.type === 'crypto').map(a => a.id))}
+                          class="px-3 py-1.5 rounded-lg text-[10px] font-bold text-amber-400 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 bg-amber-500/[0.04] transition-all"
+                        >
+                          🪙 Crypto Only
+                        </button>
+                        <button
+                          onClick={() => setActiveAssetsList(ALL_ASSETS.filter(a => a.type === 'forex').map(a => a.id))}
+                          class="px-3 py-1.5 rounded-lg text-[10px] font-bold text-blue-400 hover:text-blue-300 border border-blue-500/20 hover:border-blue-500/40 bg-blue-500/[0.04] transition-all"
+                        >
+                          💱 Forex & Commodity
+                        </button>
+                        <button
+                          onClick={() => setActiveAssetsList([])}
+                          class="px-3 py-1.5 rounded-lg text-[10px] font-bold text-zinc-400 hover:text-white border border-white/5 hover:border-white/20 transition-all"
+                        >
+                          Clear All
+                        </button>
+                      </div>
                       <button
                         onClick={() => setShowAssetConfig(false)}
                         class="rounded-xl bg-green-500 hover:bg-green-400 text-black font-bold px-5 py-2.5 text-xs transition-all-300"

@@ -579,7 +579,10 @@ app.get('/api/sentiment/crypto', async (req, res) => {
         'XRPUSDT': 'ripple',
         'DOGEUSDT': 'dogecoin',
         'LINKUSDT': 'chainlink',
-        'TRXUSDT': 'tron'
+        'TRXUSDT': 'tron',
+        'HOODUSDT': 'robinhood',
+        'LITUSDT': 'lighter',
+        'ANSEMUSDT': 'the-black-bull'
       };
       
       const geckoId = geckoIds[symbol];
@@ -603,7 +606,8 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       }
 
       // 2. Pilih simbol dasar Yahoo Finance
-      // Untuk HYPE & ASTER, kita tarik data grafik SOL-USD yang sangat aktif lalu kita sekala (scale)
+      // Untuk HYPE & ASTER & LIT & ANSEM, kita tarik data grafik SOL-USD yang sangat aktif lalu kita sekala (scale)
+      // Untuk HOOD, kita gunakan ticker saham HOOD (Robinhood Markets) dari Yahoo Finance langsung
       let yahooSymbol = 'BTC-USD';
       if (symbol === 'BTCUSDT') yahooSymbol = 'BTC-USD';
       else if (symbol === 'ETHUSDT') yahooSymbol = 'ETH-USD';
@@ -613,7 +617,8 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       else if (symbol === 'DOGEUSDT') yahooSymbol = 'DOGE-USD';
       else if (symbol === 'LINKUSDT') yahooSymbol = 'LINK-USD';
       else if (symbol === 'TRXUSDT') yahooSymbol = 'TRX-USD';
-      else if (symbol === 'HYPEUSDT' || symbol === 'ASTERUSDT') yahooSymbol = 'SOL-USD';
+      else if (symbol === 'HOODUSDT') yahooSymbol = 'HOOD';
+      else if (symbol === 'HYPEUSDT' || symbol === 'ASTERUSDT' || symbol === 'LITUSDT' || symbol === 'ANSEMUSDT') yahooSymbol = 'SOL-USD';
       
       let yfInterval = '1h';
       let yfRange = '30d';
