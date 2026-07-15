@@ -174,7 +174,7 @@
       { id: 'JPN225', name: 'Japan 225', symbol: 'JPN225', type: 'forex', apiSymbol: '^N225' },
       { id: 'SPA35', name: 'Spain 35', symbol: 'SPA35', type: 'forex', apiSymbol: '^IBEX' },
       
-      // Forex (Yahoo Finance)
+      // Forex Majors (Yahoo Finance)
       { id: 'EURUSD', name: 'Euro / US Dollar', symbol: 'EURUSD', type: 'forex', apiSymbol: 'EURUSD=X' },
       { id: 'GBPUSD', name: 'British Pound / US Dollar', symbol: 'GBPUSD', type: 'forex', apiSymbol: 'GBPUSD=X' },
       { id: 'USDJPY', name: 'US Dollar / Japanese Yen', symbol: 'USDJPY', type: 'forex', apiSymbol: 'USDJPY=X' },
@@ -182,9 +182,59 @@
       { id: 'USDCAD', name: 'US Dollar / Canadian Dollar', symbol: 'USDCAD', type: 'forex', apiSymbol: 'USDCAD=X' },
       { id: 'USDCHF', name: 'US Dollar / Swiss Franc', symbol: 'USDCHF', type: 'forex', apiSymbol: 'USDCHF=X' },
       { id: 'NZDUSD', name: 'New Zealand Dollar / US Dollar', symbol: 'NZDUSD', type: 'forex', apiSymbol: 'NZDUSD=X' },
+      
+      // Forex EUR Crosses
       { id: 'EURGBP', name: 'Euro / British Pound', symbol: 'EURGBP', type: 'forex', apiSymbol: 'EURGBP=X' },
       { id: 'EURJPY', name: 'Euro / Japanese Yen', symbol: 'EURJPY', type: 'forex', apiSymbol: 'EURJPY=X' },
-      { id: 'GBPJPY', name: 'British Pound / Japanese Yen', symbol: 'GBPJPY', type: 'forex', apiSymbol: 'GBPJPY=X' }
+      { id: 'EURCHF', name: 'Euro / Swiss Franc', symbol: 'EURCHF', type: 'forex', apiSymbol: 'EURCHF=X' },
+      { id: 'EURAUD', name: 'Euro / Australian Dollar', symbol: 'EURAUD', type: 'forex', apiSymbol: 'EURAUD=X' },
+      { id: 'EURCAD', name: 'Euro / Canadian Dollar', symbol: 'EURCAD', type: 'forex', apiSymbol: 'EURCAD=X' },
+      { id: 'EURNZD', name: 'Euro / New Zealand Dollar', symbol: 'EURNZD', type: 'forex', apiSymbol: 'EURNZD=X' },
+      
+      // Forex GBP Crosses
+      { id: 'GBPJPY', name: 'British Pound / Japanese Yen', symbol: 'GBPJPY', type: 'forex', apiSymbol: 'GBPJPY=X' },
+      { id: 'GBPCHF', name: 'British Pound / Swiss Franc', symbol: 'GBPCHF', type: 'forex', apiSymbol: 'GBPCHF=X' },
+      { id: 'GBPAUD', name: 'British Pound / Australian Dollar', symbol: 'GBPAUD', type: 'forex', apiSymbol: 'GBPAUD=X' },
+      { id: 'GBPCAD', name: 'British Pound / Canadian Dollar', symbol: 'GBPCAD', type: 'forex', apiSymbol: 'GBPCAD=X' },
+      { id: 'GBPNZD', name: 'British Pound / New Zealand Dollar', symbol: 'GBPNZD', type: 'forex', apiSymbol: 'GBPNZD=X' },
+      
+      // Forex AUD Crosses
+      { id: 'AUDJPY', name: 'Australian Dollar / Japanese Yen', symbol: 'AUDJPY', type: 'forex', apiSymbol: 'AUDJPY=X' },
+      { id: 'AUDCAD', name: 'Australian Dollar / Canadian Dollar', symbol: 'AUDCAD', type: 'forex', apiSymbol: 'AUDCAD=X' },
+      { id: 'AUDCHF', name: 'Australian Dollar / Swiss Franc', symbol: 'AUDCHF', type: 'forex', apiSymbol: 'AUDCHF=X' },
+      { id: 'AUDNZD', name: 'Australian Dollar / New Zealand Dollar', symbol: 'AUDNZD', type: 'forex', apiSymbol: 'AUDNZD=X' },
+      
+      // Forex NZD Crosses
+      { id: 'NZDJPY', name: 'New Zealand Dollar / Japanese Yen', symbol: 'NZDJPY', type: 'forex', apiSymbol: 'NZDJPY=X' },
+      { id: 'NZDCAD', name: 'New Zealand Dollar / Canadian Dollar', symbol: 'NZDCAD', type: 'forex', apiSymbol: 'NZDCAD=X' },
+      { id: 'NZDCHF', name: 'New Zealand Dollar / Swiss Franc', symbol: 'NZDCHF', type: 'forex', apiSymbol: 'NZDCHF=X' },
+      
+      // Forex CAD/CHF Crosses
+      { id: 'CADJPY', name: 'Canadian Dollar / Japanese Yen', symbol: 'CADJPY', type: 'forex', apiSymbol: 'CADJPY=X' },
+      { id: 'CADCHF', name: 'Canadian Dollar / Swiss Franc', symbol: 'CADCHF', type: 'forex', apiSymbol: 'CADCHF=X' },
+      { id: 'CHFJPY', name: 'Swiss Franc / Japanese Yen', symbol: 'CHFJPY', type: 'forex', apiSymbol: 'CHFJPY=X' },
+      
+      // Forex Exotics
+      { id: 'USDSGD', name: 'US Dollar / Singapore Dollar', symbol: 'USDSGD', type: 'forex', apiSymbol: 'USDSGD=X' },
+      { id: 'USDHKD', name: 'US Dollar / Hong Kong Dollar', symbol: 'USDHKD', type: 'forex', apiSymbol: 'USDHKD=X' },
+      { id: 'USDMXN', name: 'US Dollar / Mexican Peso', symbol: 'USDMXN', type: 'forex', apiSymbol: 'USDMXN=X' },
+      { id: 'USDZAR', name: 'US Dollar / South African Rand', symbol: 'USDZAR', type: 'forex', apiSymbol: 'USDZAR=X' },
+      { id: 'USDTRY', name: 'US Dollar / Turkish Lira', symbol: 'USDTRY', type: 'forex', apiSymbol: 'USDTRY=X' },
+      { id: 'USDNOK', name: 'US Dollar / Norwegian Krone', symbol: 'USDNOK', type: 'forex', apiSymbol: 'USDNOK=X' },
+      { id: 'USDSEK', name: 'US Dollar / Swedish Krona', symbol: 'USDSEK', type: 'forex', apiSymbol: 'USDSEK=X' },
+      { id: 'USDPLN', name: 'US Dollar / Polish Zloty', symbol: 'USDPLN', type: 'forex', apiSymbol: 'USDPLN=X' },
+      { id: 'USDDKK', name: 'US Dollar / Danish Krone', symbol: 'USDDKK', type: 'forex', apiSymbol: 'USDDKK=X' },
+      { id: 'EURTRY', name: 'Euro / Turkish Lira', symbol: 'EURTRY', type: 'forex', apiSymbol: 'EURTRY=X' },
+      { id: 'EURPLN', name: 'Euro / Polish Zloty', symbol: 'EURPLN', type: 'forex', apiSymbol: 'EURPLN=X' },
+      { id: 'EURNOK', name: 'Euro / Norwegian Krone', symbol: 'EURNOK', type: 'forex', apiSymbol: 'EURNOK=X' },
+      { id: 'EURSEK', name: 'Euro / Swedish Krona', symbol: 'EURSEK', type: 'forex', apiSymbol: 'EURSEK=X' },
+      
+      // Commodities (Yahoo Finance)
+      { id: 'XAGUSD', name: 'Silver Spot', symbol: 'XAGUSD', type: 'forex', apiSymbol: 'SI=F' },
+      { id: 'WTIUSD', name: 'Crude Oil WTI', symbol: 'WTIUSD', type: 'forex', apiSymbol: 'CL=F' },
+      { id: 'BRENTUSD', name: 'Brent Crude Oil', symbol: 'BRENTUSD', type: 'forex', apiSymbol: 'BZ=F' },
+      { id: 'NATGASUSD', name: 'Natural Gas', symbol: 'NATGASUSD', type: 'forex', apiSymbol: 'NG=F' },
+      { id: 'COPPERUSD', name: 'Copper', symbol: 'COPPERUSD', type: 'forex', apiSymbol: 'HG=F' }
     ];
 
     const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H2', 'H3', 'H4', 'D1', 'W1', '1M'];
@@ -985,7 +1035,7 @@
             peakSession: "Sangat direkomendasikan ditransaksikan saat Sesi Overlap London & New York (pukul 19:00 - 23:00 WIB) untuk volatilitas optimal."
           };
         }
-        if (asset.id === 'USDJPY' || asset.id === 'EURJPY' || asset.id === 'GBPJPY') {
+        if (asset.id.includes('JPY')) {
           return {
             hfmHours: "Senin pukul 05:05 WIB s/d Sabtu pukul 04:55 WIB (Running 24 jam penuh dari Senin pagi hingga Sabtu dini hari).",
             peakSession: "Volatilitas tinggi terjadi pada Sesi Asia/Tokyo (06:00 - 13:00 WIB) dan berlanjut ke Sesi London/Eropa sore hari."
@@ -2117,8 +2167,9 @@
         if (slInput <= 0) {
           // If SL is empty, check if we can solve it from Lots
           if (lots > 0) {
+            const isJPYPair = activeAsset.id.includes('JPY');
             const slDistanceVal = activeAsset.type === 'forex' 
-              ? (activeAsset.id === 'USDJPY' ? (riskUSD * 158.0) / (lots * contractSize) : riskUSD / (lots * contractSize))
+              ? (isJPYPair ? (riskUSD * entry) / (lots * contractSize) : riskUSD / (lots * contractSize))
               : riskUSD / lots;
             recSL = isBuyMode ? entry - slDistanceVal : entry + slDistanceVal;
             adviceList.push(`Stop Loss kosong. Dihitung otomatis dari Lot manual Anda: ${recSL.toFixed(entry > 100 ? 2 : 5)}.`);
@@ -2160,8 +2211,8 @@
             let calculatedLots = 0;
             if (activeAsset.type === 'forex') {
               calculatedLots = riskUSD / (finalSLDistance * contractSize);
-              if (activeAsset.id === 'USDJPY') {
-                calculatedLots = (riskUSD * 158.0) / (finalSLDistance * contractSize);
+              if (activeAsset.id.includes('JPY')) {
+                calculatedLots = (riskUSD * entry) / (finalSLDistance * contractSize);
               }
             } else {
               calculatedLots = riskUSD / finalSLDistance;
