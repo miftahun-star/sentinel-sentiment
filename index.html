@@ -1082,16 +1082,37 @@
         const isBullish = (rsi > 50 && price > ema50) || (price > sma20 && macdHist > 0);
         const entry = parseFloat(price.toFixed(price > 100 ? 2 : 4));
 
-        // Use real Fibonacci levels if available for SL and TP
+        // Calculate SL and TP dynamically & strictly relative to Entry
         let sl, tp;
         const fib = indicators.fibonacci;
-        if (fib && fib.levels) {
-          sl = isBullish ? parseFloat((fib.levels['0.786'] || (price * 0.985)).toFixed(price > 100 ? 2 : 4)) : parseFloat((fib.levels['0.786'] || (price * 1.015)).toFixed(price > 100 ? 2 : 4));
-          tp = isBullish ? parseFloat((fib.levels['-0.272'] || fib.levels['0.236'] || (price * 1.03)).toFixed(price > 100 ? 2 : 4)) : parseFloat((fib.levels['-0.272'] || fib.levels['0.236'] || (price * 0.97)).toFixed(price > 100 ? 2 : 4));
+        const atrEst = (indicators.upperBand && indicators.lowerBand) 
+          ? Math.max(price * 0.012, (indicators.upperBand - indicators.lowerBand) * 0.35)
+          : price * 0.015;
+
+        if (isBullish) {
+          // BUY BIAS: SL must be strictly BELOW entry (< price), TP strictly ABOVE entry (> price)
+          let rawSL = price - atrEst;
+          let rawTP = price + atrEst * 2.2;
+          if (fib && fib.levels) {
+            const f786 = fib.levels['0.786'];
+            const f236 = fib.levels['0.236'];
+            if (f786 && f786 < price) rawSL = f786;
+            if (f236 && f236 > price) rawTP = f236;
+          }
+          sl = parseFloat(Math.min(price * 0.995, rawSL).toFixed(price > 100 ? 2 : 4));
+          tp = parseFloat(Math.max(price * 1.01, rawTP).toFixed(price > 100 ? 2 : 4));
         } else {
-          const atrEst = price * 0.015;
-          sl = isBullish ? parseFloat((price - atrEst).toFixed(price > 100 ? 2 : 4)) : parseFloat((price + atrEst).toFixed(price > 100 ? 2 : 4));
-          tp = isBullish ? parseFloat((price + atrEst * 2.2).toFixed(price > 100 ? 2 : 4)) : parseFloat((price - atrEst * 2.2).toFixed(price > 100 ? 2 : 4));
+          // SELL BIAS: SL must be strictly ABOVE entry (> price), TP strictly BELOW entry (< price)
+          let rawSL = price + atrEst;
+          let rawTP = price - atrEst * 2.2;
+          if (fib && fib.levels) {
+            const f786 = fib.levels['0.786'];
+            const f236 = fib.levels['0.236'];
+            if (f786 && f786 > price) rawSL = f786;
+            if (f236 && f236 < price) rawTP = f236;
+          }
+          sl = parseFloat(Math.max(price * 1.005, rawSL).toFixed(price > 100 ? 2 : 4));
+          tp = parseFloat(Math.min(price * 0.99, rawTP).toFixed(price > 100 ? 2 : 4));
         }
         
         const recommendedTimeframe = asset.type === 'crypto' ? 'H4 / D1 (Swing)' : 'H1 / H4 (Intraday)';
@@ -2128,16 +2149,16 @@
           setCustomEntryStr(liveAssetData.price.toString());
           const isBuy = tradeDirection === 'BUY';
           const entry = liveAssetData.price;
-          const fib = liveAssetData.indicators ? liveAssetData.indicators.fibonacci : null;
-          if (fib && fib.levels) {
-            setCustomSLStr(isBuy ? (fib.levels['0.786'] * 0.998).toFixed(entry > 100 ? 2 : 5) : (fib.levels['0.786'] * 1.002).toFixed(entry > 100 ? 2 : 5));
-            setCustomTPStr(isBuy ? (fib.levels['0.236'] * 1.002).toFixed(entry > 100 ? 2 : 5) : (fib.levels['0.236'] * 0.998).toFixed(entry > 100 ? 2 : 5));
+          const atrEst = entry * 0.015;
+          if (isBuy) {
+            setCustomSLStr((entry - atrEst).toFixed(entry > 100 ? 2 : 5));
+            setCustomTPStr((entry + atrEst * 2.0).toFixed(entry > 100 ? 2 : 5));
           } else {
-            setCustomSLStr(isBuy ? (entry * 0.99).toFixed(entry > 100 ? 2 : 5) : (entry * 1.01).toFixed(entry > 100 ? 2 : 5));
-            setCustomTPStr(isBuy ? (entry * 1.02).toFixed(entry > 100 ? 2 : 5) : (entry * 0.98).toFixed(entry > 100 ? 2 : 5));
+            setCustomSLStr((entry + atrEst).toFixed(entry > 100 ? 2 : 5));
+            setCustomTPStr((entry - atrEst * 2.0).toFixed(entry > 100 ? 2 : 5));
           }
         }
-      }, [selectedAssetId]);
+      }, [selectedAssetId, tradeDirection]);
 
       const calculateAiRecommendation = () => {
         // Parse inputs, using defaults if empty
