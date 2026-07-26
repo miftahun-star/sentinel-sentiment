@@ -366,45 +366,7 @@ function detectHarmonics(candles, period = 'H1') {
     }
   }
 
-  // Simulated Fallback Pattern (Peluang 40% agar chart visualisasi segitiga emas selalu muncul)
-  const randomSeed = Math.random();
-  if (randomSeed > 0.60) {
-    const mockPatterns = ['Gartley', 'Bat', 'Alternate Bat', 'Butterfly', 'Crab', 'Deep Crab', 'Shark', 'Cypher', '5-0', 'AB=CD'];
-    const pName = mockPatterns[Math.floor(randomSeed * 100) % mockPatterns.length];
-    const confidence = parseFloat((75 + (Math.floor(randomSeed * 1000) % 20)).toFixed(1));
-    
-    // Titik berjarak dinamis agar visual sayap segitiga emas di kanvas tergambar sempurna
-    const xIdx = Math.max(0, len - 35);
-    const aIdx = Math.max(1, len - 27);
-    const bIdx = Math.max(2, len - 18);
-    const cIdx = Math.max(3, len - 10);
-    const dIdx = len - 1;
-
-    const pX_price = isBullish ? candles[xIdx].low : candles[xIdx].high;
-    const pA_price = isBullish ? candles[aIdx].high : candles[aIdx].low;
-    const pB_price = isBullish ? candles[bIdx].low : candles[bIdx].high;
-    const pC_price = isBullish ? candles[cIdx].high : candles[cIdx].low;
-    const pD_price = isBullish ? candles[dIdx].low : candles[dIdx].high;
-
-    return {
-      pattern: `${patternType} ${pName}`,
-      confidence,
-      ratios: {
-        AB: parseFloat((isBullish ? 0.618 : 0.5).toFixed(3)),
-        BC: parseFloat((isBullish ? 0.382 : 0.886).toFixed(3)),
-        XD: parseFloat((isBullish ? 0.786 : 0.886).toFixed(3))
-      },
-      points: {
-        X: { price: pX_price, index: xIdx, time: candles[xIdx].time, type: isBullish ? 'low' : 'high' },
-        A: { price: pA_price, index: aIdx, time: candles[aIdx].time, type: isBullish ? 'high' : 'low' },
-        B: { price: pB_price, index: bIdx, time: candles[bIdx].time, type: isBullish ? 'low' : 'high' },
-        C: { price: pC_price, index: cIdx, time: candles[cIdx].time, type: isBullish ? 'high' : 'low' },
-        D: { price: pD_price, index: dIdx, time: candles[dIdx].time, type: isBullish ? 'low' : 'high' }
-      },
-      isForming: true
-    };
-  }
-
+  // Pure mathematical harmonic detection - no fake random mock patterns
   return null;
 }
 
@@ -474,10 +436,7 @@ function analyzeSentimentAndIndicators(candles, period = 'H1') {
     status = 'TRAPPED_SHORT';
   }
 
-  // Noise simulation
-  const noise = (Math.random() - 0.5) * 0.03;
-  buyRatio += noise;
-
+  // 100% Deterministic sentiment calculation - zero artificial noise
   buyRatio = Math.max(0.15, Math.min(0.85, buyRatio));
   const sellRatio = 1 - buyRatio;
 

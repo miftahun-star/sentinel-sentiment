@@ -1075,14 +1075,24 @@
         const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
         const sma20 = indicators.sma20 !== undefined ? indicators.sma20 : asset.price;
         const ema50 = indicators.ema50 !== undefined ? indicators.ema50 : asset.price;
-        
-        const isBullish = rsi > 50 && asset.price > sma20;
+        const macdHist = indicators.macd && indicators.macd.histogram !== undefined ? indicators.macd.histogram : 0;
         const price = asset.price;
         
-        const atrEstimate = price * 0.012; // 1.2% ATR estimate
+        // Multi-indicator trend evaluation
+        const isBullish = (rsi > 50 && price > ema50) || (price > sma20 && macdHist > 0);
         const entry = parseFloat(price.toFixed(price > 100 ? 2 : 4));
-        const sl = isBullish ? parseFloat((price - atrEstimate).toFixed(price > 100 ? 2 : 4)) : parseFloat((price + atrEstimate).toFixed(price > 100 ? 2 : 4));
-        const tp = isBullish ? parseFloat((price + atrEstimate * 2.5).toFixed(price > 100 ? 2 : 4)) : parseFloat((price - atrEstimate * 2.5).toFixed(price > 100 ? 2 : 4));
+
+        // Use real Fibonacci levels if available for SL and TP
+        let sl, tp;
+        const fib = indicators.fibonacci;
+        if (fib && fib.levels) {
+          sl = isBullish ? parseFloat((fib.levels['0.786'] || (price * 0.985)).toFixed(price > 100 ? 2 : 4)) : parseFloat((fib.levels['0.786'] || (price * 1.015)).toFixed(price > 100 ? 2 : 4));
+          tp = isBullish ? parseFloat((fib.levels['-0.272'] || fib.levels['0.236'] || (price * 1.03)).toFixed(price > 100 ? 2 : 4)) : parseFloat((fib.levels['-0.272'] || fib.levels['0.236'] || (price * 0.97)).toFixed(price > 100 ? 2 : 4));
+        } else {
+          const atrEst = price * 0.015;
+          sl = isBullish ? parseFloat((price - atrEst).toFixed(price > 100 ? 2 : 4)) : parseFloat((price + atrEst).toFixed(price > 100 ? 2 : 4));
+          tp = isBullish ? parseFloat((price + atrEst * 2.2).toFixed(price > 100 ? 2 : 4)) : parseFloat((price - atrEst * 2.2).toFixed(price > 100 ? 2 : 4));
+        }
         
         const recommendedTimeframe = asset.type === 'crypto' ? 'H4 / D1 (Swing)' : 'H1 / H4 (Intraday)';
         
@@ -1137,9 +1147,9 @@
         let macroSummary = `Fed Stance: ${fedSentiment} | CPI/Inflasi: ${cpiSentiment} | Tenaga Kerja/NFP: ${nfpSentiment} | Geopolitik: ${geopolitics} | Trump Factor: ${trumpFactor}`;
         
         if (isBullish) {
-          analysisText = `Antigravity AI mendeteksi penumpukan likuiditas institusional di area diskon di bawah harga saat ini. Struktur pasar pada TF ${recommendedTimeframe} secara dominan menunjukkan Higher Highs dan Higher Lows, terlepas dari bias ritel yang mungkin sedang panik menaruh posisi short. EMA 50 mendukung kelanjutan momentum bullish. Kami merekomendasikan entri beli bertahap dekat zona rata-rata harga harian. \n\n[Analisis Fundamental Makro]: ${macroSummary}`;
+          analysisText = `Antigravity AI mendeteksi penumpukan likuiditas institusional di area diskon di bawah harga saat ini. Struktur pasar pada TF ${recommendedTimeframe} secara dominan menunjukkan Higher Highs dan Higher Lows. EMA 50 & momentum indikator mendukung kelanjutan bias bullish. \n\n[Analisis Fundamental Makro]: ${macroSummary}`;
         } else {
-          analysisText = `Analisis aliran dana institusi menunjukkan distribusi pasokan yang kuat pada kisaran resistance atas di TF ${recommendedTimeframe}. Sentimen ritel mungkin bias buy, namun secara teknikal murni, harga ditolak berulang kali di area EMA 50 dan Stochastic menunjukkan kejenuhan beli. Target penurunan berada pada level support Fibonacci berikutnya. \n\n[Analisis Fundamental Makro]: ${macroSummary}`;
+          analysisText = `Analisis aliran dana institusi menunjukkan penolakan pasokan di kisaran resistance atas pada TF ${recommendedTimeframe}. Secara teknikal murni, harga ditolak di area EMA 50 dan indikator menunjukkan kejenuhan beli. Target penurunan berada pada level support Fibonacci berikutnya. \n\n[Analisis Fundamental Makro]: ${macroSummary}`;
         }
         
         return { isBullish, entry, sl, tp, recommendedTimeframe, analysisText };
@@ -1148,42 +1158,54 @@
       const getSentinelVerdict = (asset) => {
         const indicators = asset.indicators || {};
         const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
-        const sma20 = indicators.sma20 !== undefined ? indicators.sma20 : asset.price;
+        const ema50 = indicators.ema50 !== undefined ? indicators.ema50 : asset.price;
         const macdHist = indicators.macd && indicators.macd.histogram !== undefined ? indicators.macd.histogram : 0;
+        const buyRatio = asset.buyRatio || 0.5;
+        const sellRatio = asset.sellRatio || 0.5;
 
-        const isContrarianBuy = asset.status === 'TRAPPED_SHORT';
-        const isContrarianSell = asset.status === 'TRAPPED_LONG';
+        // 1. Contrarian Sentiment Signal
+        const isContrarianBuy = asset.status === 'TRAPPED_SHORT' || asset.status === 'EXTREME_SHORT' || sellRatio > 0.60;
+        const isContrarianSell = asset.status === 'TRAPPED_LONG' || asset.status === 'EXTREME_LONG' || buyRatio > 0.60;
         
-        const isTrendBuy = rsi > 50 && asset.price > sma20;
-        const isTrendSell = rsi < 50 && asset.price < sma20;
+        // 2. Technical Trend Signal (Non-Contrarian)
+        const isTrendBuy = asset.price > ema50 && rsi > 50 && macdHist >= 0;
+        const isTrendSell = asset.price < ema50 && rsi < 50 && macdHist <= 0;
         
         let buyScore = 0;
         let sellScore = 0;
         
-        if (isContrarianBuy) buyScore += 35;
-        if (isContrarianSell) sellScore += 35;
+        if (isContrarianBuy) buyScore += 40;
+        if (isContrarianSell) sellScore += 40;
         
         if (isTrendBuy) buyScore += 35;
         if (isTrendSell) sellScore += 35;
         
-        if (rsi < 30) buyScore += 15;
-        if (rsi > 70) sellScore += 15;
+        if (rsi < 35) buyScore += 15;
+        if (rsi > 65) sellScore += 15;
         
-        if (macdHist > 0) buyScore += 15;
-        else sellScore += 15;
+        if (macdHist > 0) buyScore += 10;
+        else if (macdHist < 0) sellScore += 10;
         
-        let verdictClass = 'bg-zinc-800 text-zinc-400';
-        let verdictText = 'NEUTRAL / WAIT';
-        let explanation = 'Sinyal contrarian ritel dan tren momentum teknikal saling bertolak belakang. Direkomendasikan menunggu konfirmasi breakout pada level Fibonacci sebelum masuk posisi.';
+        let verdictClass = 'bg-zinc-800 text-zinc-400 border border-white/10';
+        let verdictText = 'NEUTRAL / DIVERGENCE';
+        let explanation = 'Sinyal contrarian ritel dan tren momentum teknikal saat ini mengalami divergensi (bertolak belakang). Direkomendasikan menunggu konfirmasi breakout atau dorongan momentum sebelum membuka posisi baru.';
         
-        if (buyScore > 60) {
-          verdictText = buyScore >= 80 ? 'STRONG BUY CONFLUENCE' : 'BUY BIAS';
-          verdictClass = buyScore >= 80 ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-green-500/5 text-green-300 border border-green-500/10';
-          explanation = `Dasbor Sentinel menyimpulkan bias BULLISH dengan tingkat keyakinan ${buyScore}%. Terjadi keselarasan antara sentimen ritel yang terjebak short (contrarian buy) dan momentum indikator teknikal (RSI & MACD) yang menunjukkan kekuatan pembelian.`;
-        } else if (sellScore > 60) {
-          verdictText = sellScore >= 80 ? 'STRONG SELL CONFLUENCE' : 'SELL BIAS';
-          verdictClass = sellScore >= 80 ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-orange-500/5 text-orange-300 border border-orange-500/10';
-          explanation = `Dasbor Sentinel menyimpulkan bias BEARISH dengan tingkat keyakinan ${sellScore}%. Terjadi keselarasan antara ritel yang terperangkap buy (contrarian sell) dan penolakan harga pada area EMA 50 serta histogram MACD negatif.`;
+        if (isContrarianBuy && isTrendBuy) {
+          verdictText = 'STRONG BUY CONFLUENCE';
+          verdictClass = 'bg-green-500/10 text-green-400 border border-green-500/20';
+          explanation = `Sentinel mendeteksi KESELARASAN 100% (Confluence): Sentimen ritel terperangkap Short (Contrarian Buy) bersamaan dengan Tren Teknikal yang Bullish (di atas EMA 50 & RSI > 50). Ini memberikan probabilitas kemenangan tertinggi untuk posisi Beli.`;
+        } else if (isContrarianSell && isTrendSell) {
+          verdictText = 'STRONG SELL CONFLUENCE';
+          verdictClass = 'bg-orange-500/10 text-orange-400 border border-orange-500/20';
+          explanation = `Sentinel mendeteksi KESELARASAN 100% (Confluence): Sentimen ritel terperangkap Long (Contrarian Sell) bersamaan dengan Tren Teknikal yang Bearish (di bawah EMA 50 & RSI < 50). Ini memberikan probabilitas kemenangan tertinggi untuk posisi Jual.`;
+        } else if (buyScore > 55) {
+          verdictText = 'BUY BIAS';
+          verdictClass = 'bg-green-500/5 text-green-300 border border-green-500/10';
+          explanation = `Sentinel menyimpulkan bias BULLISH (Tingkat Keyakinan ${buyScore}%). Dorongan pembeli lebih dominan, namun perhatikan potensi resistance terdekat.`;
+        } else if (sellScore > 55) {
+          verdictText = 'SELL BIAS';
+          verdictClass = 'bg-orange-500/5 text-orange-300 border border-orange-500/10';
+          explanation = `Sentinel menyimpulkan bias BEARISH (Tingkat Keyakinan ${sellScore}%). Tekanan penjual lebih dominan, namun perhatikan potensi support terdekat.`;
         }
         return { verdictText, verdictClass, explanation };
       };
@@ -2005,21 +2027,21 @@
 
               {/* Card 6: Non-Contrarian Trend Following & Fibonacci */}
               {(() => {
-                const isBullish = asset.indicators && asset.indicators.rsi > 50 && asset.price > asset.indicators.sma20;
-                let direction = 'BEARISH TREND';
+                const ema50 = asset.indicators ? (asset.indicators.ema50 || asset.price) : asset.price;
+                const rsi = asset.indicators ? (asset.indicators.rsi || 50) : 50;
+                const isBullish = asset.price >= ema50 && rsi >= 50;
+                let direction = isBullish ? 'BULLISH TREND' : 'BEARISH TREND';
                 let commentary = '';
                 
                 if (asset.indicators) {
                   const rsiVal = asset.indicators.rsi !== undefined ? asset.indicators.rsi.toFixed(1) : 'N/A';
                   if (isBullish) {
-                    direction = 'BULLISH TREND';
-                    commentary = `Harga berada di atas rata-rata pergerakan harian (SMA 20) dan RSI (${rsiVal}) berada di wilayah bullish (>50). Momentum pembeli mendominasi struktur pasar. Sinyal non-contrarian merekomendasikan untuk mengikuti tren naik utama (Buy Strength) dengan menargetkan area resisten berikutnya.`;
+                    commentary = `Sinyal murni Trend Following (Non-Contrarian): Harga ditransaksikan di atas EMA 50 dan RSI (${rsiVal}) di atas 50. Momentum struktur pasar didominasi oleh Tren Naik (Buy Strength). Berbeda dengan Contrarian yang melawan arus ritel, sinyal ini fokus mengikuti momentum harga saat ini.`;
                   } else {
-                    direction = 'BEARISH TREND';
-                    commentary = `Harga ditransaksikan di bawah SMA 20 dan RSI (${rsiVal}) berada di wilayah bearish (<50). Tren utama didominasi oleh penjual. Sinyal non-contrarian merekomendasikan untuk mengikuti momentum penurunan utama (Sell Rallies) untuk menargetkan level support terendah berikutnya.`;
+                    commentary = `Sinyal murni Trend Following (Non-Contrarian): Harga ditransaksikan di bawah EMA 50 dan RSI (${rsiVal}) di bawah 50. Momentum struktur pasar didominasi oleh Tren Turun (Sell Rallies). Sinyal ini menyarankan untuk mengikuti dorongan tren penurunan utama.`;
                   }
                 } else {
-                  commentary = `Data tren tidak tersedia.`;
+                  commentary = `Data tren teknikal tidak tersedia.`;
                 }
 
                 return (
