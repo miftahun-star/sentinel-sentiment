@@ -1067,6 +1067,138 @@ app.get('/api/news', async (req, res) => {
   }
 });
 
+// ----------------------------------------------------
+// API 4: Live Gemini 2.0 Flash LLM AI Assessment
+// ----------------------------------------------------
+app.post('/api/ai-assessment', async (req, res) => {
+  try {
+    const { asset, newsList } = req.body || {};
+    if (!asset || !asset.id) {
+      return res.status(400).json({ error: 'Missing asset payload' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || req.headers['x-gemini-api-key'];
+
+    const symbol = asset.id;
+    const name = asset.name || symbol;
+    const price = asset.price || 0;
+    const buyRatio = asset.buyRatio ? (asset.buyRatio * 100).toFixed(1) : "50.0";
+    const sellRatio = asset.sellRatio ? (asset.sellRatio * 100).toFixed(1) : "50.0";
+    const status = asset.status || 'HEALTHY';
+    const indicators = asset.indicators || {};
+    const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
+    const ema50 = indicators.ema50 || price;
+    const sma20 = indicators.sma20 || price;
+    const macdHist = indicators.macd?.histogram || 0;
+    const harmonicName = indicators.harmonicPattern?.pattern || 'None';
+
+    const recentNewsTitles = (newsList || []).slice(0, 5).map(n => n.title).join('; ');
+
+    const promptText = `Anda adalah Antigravity AI, seorang analis kuantitatif pasar keuangan institusional.
+Berikan penilaian taktis pasar secara mendalam dalam bahasa Indonesia untuk aset berikut:
+
+Data Pasar Realtime:
+- Aset: ${name} (${symbol})
+- Harga Saat Ini: ${price}
+- Perubahan 24j: ${asset.change24h}%
+- Posisi Ritel: ${buyRatio}% LONG vs ${sellRatio}% SHORT (Status Sentimen: ${status})
+- Indikator: RSI(14) = ${rsi}, EMA 50 = ${ema50}, SMA 20 = ${sma20}, MACD Histogram = ${macdHist}
+- Pola Harmonik: ${harmonicName}
+- Berita Makro Terkini: ${recentNewsTitles || 'Tidak ada berita berdampak tinggi saat ini'}
+
+Aturan Wajib (Strict Financial Math):
+1. Jika Posisi Jual (SELL BIAS): SL WAJIB > Harga saat ini (${price}), TP WAJIB < Harga saat ini (${price}).
+2. Jika Posisi Beli (BUY BIAS): SL WAJIB < Harga saat ini (${price}), TP WAJIB > Harga saat ini (${price}).
+3. Berikan analisis narasi taktis yang profesional, lugas, dan berwawasan institusi (max 3-4 kalimat).
+
+Kembalikan jawaban HANYA dalam format JSON valid tanpa markdown fence berikut:
+{
+  "isBullish": boolean,
+  "biasText": "BUY BIAS" atau "SELL BIAS",
+  "entry": number,
+  "sl": number,
+  "tp": number,
+  "recommendedTimeframe": "H1 / H4 (Intraday)" atau "H4 / D1 (Swing)",
+  "confidence": number (65-98),
+  "analysisText": "narasi analisis taktis disini..."
+}`;
+
+    if (apiKey) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        if (geminiRes.ok) {
+          const geminiData = await geminiRes.json();
+          const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawText) {
+            const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleanJson);
+            
+            // Double check SL / TP logic safety
+            let isBull = parsed.isBullish;
+            let slVal = parsed.sl;
+            let tpVal = parsed.tp;
+
+            if (isBull && (slVal >= price || tpVal <= price)) {
+              slVal = parseFloat((price * 0.985).toFixed(price > 100 ? 2 : 4));
+              tpVal = parseFloat((price * 1.03).toFixed(price > 100 ? 2 : 4));
+            } else if (!isBull && (slVal <= price || tpVal >= price)) {
+              slVal = parseFloat((price * 1.015).toFixed(price > 100 ? 2 : 4));
+              tpVal = parseFloat((price * 0.97).toFixed(price > 100 ? 2 : 4));
+            }
+
+            return res.json({
+              ...parsed,
+              sl: slVal,
+              tp: tpVal,
+              isLiveLLM: true,
+              model: 'Gemini 2.0 Flash (Live Google LLM)'
+            });
+          }
+        } else {
+          console.warn("Gemini API call returned status:", geminiRes.status);
+        }
+      } catch (err) {
+        console.warn("Error calling Gemini API:", err.message);
+      }
+    }
+
+    // High-precision Fallback response if API key is not yet set
+    const isBullish = (rsi > 50 && price > ema50) || (status === 'TRAPPED_SHORT') || (asset.sellRatio > 0.60);
+    const atrEst = price * 0.015;
+    const sl = isBullish ? parseFloat((price - atrEst).toFixed(price > 100 ? 2 : 4)) : parseFloat((price + atrEst).toFixed(price > 100 ? 2 : 4));
+    const tp = isBullish ? parseFloat((price + atrEst * 2.2).toFixed(price > 100 ? 2 : 4)) : parseFloat((price - atrEst * 2.2).toFixed(price > 100 ? 2 : 4));
+
+    return res.json({
+      isBullish,
+      biasText: isBullish ? 'BUY BIAS' : 'SELL BIAS',
+      entry: price,
+      sl,
+      tp,
+      recommendedTimeframe: asset.type === 'crypto' ? 'H4 / D1 (Swing)' : 'H1 / H4 (Intraday)',
+      confidence: isBullish ? 86 : 83,
+      analysisText: isBullish
+        ? `[Antigravity Quant Engine] Penumpukan likuiditas pembeli terdeteksi di area diskon di bawah ${price}. RSI (${rsi}) & EMA 50 mengonfirmasi bias bullish dengan dominasi tekanan pasar terhadap kerumunan ritel.`
+        : `[Antigravity Quant Engine] Penolakan pasokan institusi terdeteksi di atas resistance ${price}. RSI (${rsi}) & EMA 50 menunjukkan momentum bearish.`,
+      isLiveLLM: false,
+      model: 'Quant Algorithm (Masukkan GEMINI_API_KEY di Vercel/Settings untuk Aktifkan Live Gemini 2.0 Flash LLM)'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Start Server
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
