@@ -224,7 +224,22 @@ function getPivots(candles, strength = 3) {
 function detectHarmonics(candles, period = 'H1') {
   if (candles.length < 50) return null;
   
-  const pivots = getPivots(candles, 3);
+  // Dynamic pivot strength and strict tolerance based on timeframe to filter lower timeframe noise
+  let strength = 3;
+  let tolerance = 0.04;
+
+  if (period === 'M1' || period === 'M5') {
+    strength = 5;
+    tolerance = 0.025; // Strict geometric precision for noisy lower timeframes
+  } else if (period === 'M15' || period === 'M30') {
+    strength = 4;
+    tolerance = 0.035;
+  } else if (period === 'H4' || period === 'D1' || period === 'W1' || period === '1M') {
+    strength = 3;
+    tolerance = 0.05; // Standard Carney tolerance for high-accuracy institutional timeframes
+  }
+
+  const pivots = getPivots(candles, strength);
   
   const len = candles.length;
   const isBullish = candles[len - 1].close > candles[Math.max(0, len - 20)].close;
@@ -261,9 +276,7 @@ function detectHarmonics(candles, period = 'H1') {
       const rXD_XC = diffCD / diffXC; // D vs XC
       const rCD_BC = diffCD / diffBC; // D vs BC
       
-      // Standard fixed 5% tolerance as defined in the 15-part guide
-      let tolerance = 0.05;
-      
+      // Use dynamic timeframe-based tolerance (0.025 on M1/M5 up to 0.05 on H4/D1)
       const isWithin = (val, target) => Math.abs(val - target) <= tolerance;
       
       let matches = [];
