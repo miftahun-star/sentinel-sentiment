@@ -286,6 +286,23 @@
       { key: 'CLOSED', label: 'Market Closed' }
     ];
 
+    const HARMONIC_FILTERS = [
+      { key: 'ALL', label: 'All Harmonic Patterns' },
+      { key: 'WITH_HARMONIC', label: '★ Any Harmonic Pattern' },
+      { key: 'BULLISH_HARMONIC', label: '🟢 Any Bullish Pattern' },
+      { key: 'BEARISH_HARMONIC', label: '🔴 Any Bearish Pattern' },
+      { key: 'Gartley', label: 'Gartley' },
+      { key: 'Bat', label: 'Bat' },
+      { key: 'Alternate Bat', label: 'Alternate Bat' },
+      { key: 'Butterfly', label: 'Butterfly' },
+      { key: 'Crab', label: 'Crab' },
+      { key: 'Deep Crab', label: 'Deep Crab' },
+      { key: 'Shark', label: 'Shark' },
+      { key: 'Cypher', label: 'Cypher' },
+      { key: '5-0', label: '5-0' },
+      { key: 'AB=CD', label: 'AB=CD' }
+    ];
+
     function App() {
       const [theme, setTheme] = useState(() => localStorage.getItem('sentinel_theme') || 'dark');
       const [activeMainTab, setActiveMainTab] = useState('sentiment');
@@ -311,6 +328,7 @@
       const [activeStatusFilter, setActiveStatusFilter] = useState('ALL');
       const [activeBiasFilter, setActiveBiasFilter] = useState('ALL');
       const [activeMarketStateFilter, setActiveMarketStateFilter] = useState('ALL');
+      const [activeHarmonicFilter, setActiveHarmonicFilter] = useState('ALL');
       const [showAssetConfig, setShowAssetConfig] = useState(false);
 
       const fetchNews = async () => {
@@ -486,7 +504,7 @@
           
           const data = marketData[asset.id];
           if (!data) {
-            return activeStatusFilter === 'ALL' && activeBiasFilter === 'ALL' && activeMarketStateFilter === 'ALL';
+            return activeStatusFilter === 'ALL' && activeBiasFilter === 'ALL' && activeMarketStateFilter === 'ALL' && activeHarmonicFilter === 'ALL';
           }
           
           if (activeStatusFilter !== 'ALL' && data.status !== activeStatusFilter) {
@@ -502,6 +520,19 @@
             const isOpen = checkMarketOpen(asset.type);
             const filterOpen = activeMarketStateFilter === 'OPEN';
             if (isOpen !== filterOpen) return false;
+          }
+
+          if (activeHarmonicFilter !== 'ALL') {
+            const hpPattern = data.indicators && data.indicators.harmonicPattern ? (data.indicators.harmonicPattern.pattern || '') : '';
+            if (activeHarmonicFilter === 'WITH_HARMONIC') {
+              if (!hpPattern) return false;
+            } else if (activeHarmonicFilter === 'BULLISH_HARMONIC') {
+              if (!hpPattern || !hpPattern.toLowerCase().includes('bullish')) return false;
+            } else if (activeHarmonicFilter === 'BEARISH_HARMONIC') {
+              if (!hpPattern || !hpPattern.toLowerCase().includes('bearish')) return false;
+            } else {
+              if (!hpPattern || !hpPattern.toLowerCase().includes(activeHarmonicFilter.toLowerCase())) return false;
+            }
           }
           
           return true;
@@ -647,6 +678,17 @@
                       class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 outline-none focus:border-green-500"
                     >
                       {MARKET_STATE_FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Filter Harmonic Pattern</span>
+                    <select 
+                      value={activeHarmonicFilter} 
+                      onChange={(e) => setActiveHarmonicFilter(e.target.value)}
+                      class="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-xs font-semibold text-amber-400 outline-none focus:border-amber-500 cursor-pointer font-mono"
+                    >
+                      {HARMONIC_FILTERS.map(f => <option key={f.key} value={f.key} class="bg-zinc-950 text-white">{f.label}</option>)}
                     </select>
                   </div>
                 </div>
