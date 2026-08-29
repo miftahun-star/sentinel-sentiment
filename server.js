@@ -9,8 +9,67 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
+const APP_ORIGIN = process.env.APP_ORIGIN || 'https://sentinel-sentiment.vercel.app';
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || origin === APP_ORIGIN || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return cb(null, true);
+    }
+    return cb(null, false);
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+}));
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  next();
+});
+
+// Simple in-memory rate limiter (per-IP) to protect upstream API quota/billing
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX = 60; // requests per IP per window
+const rateBuckets = new Map();
+function rateLimit(req, res, next) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const key = String(ip).split(',')[0].trim();
+  const now = Date.now();
+  const bucket = rateBuckets.get(key);
+  if (!bucket || now - bucket.resetAt > RATE_LIMIT_WINDOW_MS) {
+    rateBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+  bucket.count += 1;
+  if (bucket.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests. Please slow down.' });
+  }
+  return next();
+}
+// Periodically prune expired buckets to avoid unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of rateBuckets) {
+    if (now - b.resetAt > RATE_LIMIT_WINDOW_MS) rateBuckets.delete(k);
+  }
+}, RATE_LIMIT_WINDOW_MS).unref();
+
+// Human-safe timeout wrapper for all outbound HTTP fetches
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.use(express.json({ limit: '256kb' }));
 
 // Serve static frontend files from public directory for security
 app.use(express.static(path.join(__dirname, 'public')));
@@ -489,11 +548,22 @@ function analyzeSentimentAndIndicators(candles, period = 'H1') {
 // ----------------------------------------------------
 // API 1: Crypto Sentiment (Bybit Futures Feed)
 // ----------------------------------------------------
-app.get('/api/sentiment/crypto', async (req, res) => {
+app.get('/api/sentiment/crypto', rateLimit, async (req, res) => {
   const { symbol, period } = req.query;
+
+  const ALLOWED_CRYPTO_SYMBOLS = new Set([
+    'BTCUSDT','ETHUSDT','SOLUSDT','LTCUSDT','XRPUSDT','DOGEUSDT','LINKUSDT','TRXUSDT'
+  ]);
+  const ALLOWED_PERIODS = new Set(['M1','M5','M15','M30','H1','H2','H3','H4','D1','W1','1M','1month']);
 
   if (!symbol || !period) {
     return res.status(400).json({ error: 'Missing parameters symbol or period' });
+  }
+  if (typeof symbol !== 'string' || !ALLOWED_CRYPTO_SYMBOLS.has(symbol)) {
+    return res.status(404).json({ error: 'Unknown or unsupported symbol. No data source available for this asset.' });
+  }
+  if (typeof period !== 'string' || !ALLOWED_PERIODS.has(period)) {
+    return res.status(400).json({ error: 'Invalid period' });
   }
 
   try {
@@ -528,8 +598,8 @@ app.get('/api/sentiment/crypto', async (req, res) => {
     const klineUrl = `https://api.bytick.com/v5/market/kline?category=linear&symbol=${symbol}&interval=${bybitInterval}&limit=200`;
 
     const [ratioRes, klineRes] = await Promise.all([
-      fetch(ratioUrl).then(r => r.json()).catch(() => null),
-      fetch(klineUrl).then(r => r.json()).catch(() => null)
+      fetchWithTimeout(ratioUrl, {}, 8000).then(r => r.json()).catch(() => null),
+      fetchWithTimeout(klineUrl, {}, 8000).then(r => r.json()).catch(() => null)
     ]);
 
     let candles = [];
@@ -545,15 +615,11 @@ app.get('/api/sentiment/crypto', async (req, res) => {
         'BTCUSDT': 'bitcoin',
         'ETHUSDT': 'ethereum',
         'SOLUSDT': 'solana',
-        'HYPEUSDT': 'hyperliquid',
-        'ASTERUSDT': 'aster-2',
         'LTCUSDT': 'litecoin',
         'XRPUSDT': 'ripple',
         'DOGEUSDT': 'dogecoin',
         'LINKUSDT': 'chainlink',
-        'TRXUSDT': 'tron',
-        'LITUSDT': 'lighter',
-        'ANSEMUSDT': 'the-black-bull'
+        'TRXUSDT': 'tron'
       };
       
       const geckoId = geckoIds[symbol];
@@ -561,23 +627,24 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       let geckoChange = null;
 
       try {
-        const gRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd&include_24hr_change=true`, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-        });
-        if (gRes.ok) {
-          const gData = await gRes.json();
-          if (gData && gData[geckoId]) {
-            geckoPrice = gData[geckoId].usd;
-            geckoChange = gData[geckoId].usd_24h_change;
-            console.log(`CoinGecko price for ${symbol} (${geckoId}): ${geckoPrice}, 24h change: ${geckoChange}`);
+        if (geckoId) {
+          const gRes = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd&include_24hr_change=true`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+          }, 8000);
+          if (gRes.ok) {
+            const gData = await gRes.json();
+            if (gData && gData[geckoId]) {
+              geckoPrice = gData[geckoId].usd;
+              geckoChange = gData[geckoId].usd_24h_change;
+              console.log(`CoinGecko price for ${symbol} (${geckoId}): ${geckoPrice}, 24h change: ${geckoChange}`);
+            }
           }
         }
       } catch (e) {
         console.warn("CoinGecko fetch failed inside fallback", e);
       }
 
-      // 2. Pilih simbol dasar Yahoo Finance
-      // Untuk HYPE & ASTER & LIT & ANSEM, kita tarik data grafik SOL-USD yang sangat aktif lalu kita sekala (scale)
+      // 2. Pilih simbol dasar Yahoo Finance yang sesuai (hanya untuk aset yang benar-benar didukung)
       let yahooSymbol = 'BTC-USD';
       if (symbol === 'BTCUSDT') yahooSymbol = 'BTC-USD';
       else if (symbol === 'ETHUSDT') yahooSymbol = 'ETH-USD';
@@ -587,7 +654,6 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       else if (symbol === 'DOGEUSDT') yahooSymbol = 'DOGE-USD';
       else if (symbol === 'LINKUSDT') yahooSymbol = 'LINK-USD';
       else if (symbol === 'TRXUSDT') yahooSymbol = 'TRX-USD';
-      else if (symbol === 'HYPEUSDT' || symbol === 'ASTERUSDT' || symbol === 'LITUSDT' || symbol === 'ANSEMUSDT') yahooSymbol = 'SOL-USD';
       
       let yfInterval = '1h';
       let yfRange = '30d';
@@ -602,12 +668,24 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       else if (period === '1M' || period === '1month') { yfInterval = '1mo'; yfRange = '1800d'; }
 
       const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${yfInterval}&range=${yfRange}`;
-      const yfResponse = await fetch(yfUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
-      const yfData = await yfResponse.json();
+      let yfResponse;
+      try {
+        yfResponse = await fetchWithTimeout(yfUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        }, 10000);
+      } catch (yfErr) {
+        console.warn('Yahoo fetch failed (crypto fallback):', yfErr.message);
+        return res.status(502).json({ error: 'Failed to fetch market data from Bybit and Yahoo Finance' });
+      }
+      let yfData;
+      try {
+        yfData = await yfResponse.json();
+      } catch (jsonErr) {
+        console.warn('Yahoo JSON parse failed (crypto fallback):', jsonErr.message);
+        return res.status(502).json({ error: 'Failed to fetch market data from Bybit and Yahoo Finance' });
+      }
 
       if (!yfData.chart?.result?.[0]) {
         return res.status(502).json({ error: 'Failed to fetch market data from Bybit and Yahoo Finance' });
@@ -639,9 +717,9 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       if (period === 'H2' || period === 'H3' || period === 'H4') {
         const multiplier = period === 'H2' ? 2 : period === 'H3' ? 3 : 4;
         const aggregated = [];
-        for (let i = 0; i < rawCandles.length; i += multiplier) {
+        for (let i = 0; i + multiplier <= rawCandles.length; i += multiplier) {
           const chunk = rawCandles.slice(i, i + multiplier);
-          if (chunk.length > 0) {
+          if (chunk.length === multiplier) {
             aggregated.push({
               time: chunk[0].time,
               open: chunk[0].open,
@@ -661,27 +739,21 @@ app.get('/api/sentiment/crypto', async (req, res) => {
         return res.status(502).json({ error: 'Failed to fetch market data from Bybit and Yahoo Finance' });
       }
 
-      // 3. Skalakan candlestick Yahoo Finance jika kita mendapatkan harga asli CoinGecko
-      if (geckoPrice) {
+      // Gunakan harga CoinGecko jika tersedia untuk tingkat akurasi harga saat ini
+      if (geckoPrice && Number.isFinite(geckoPrice) && geckoPrice > 0) {
         currentPrice = geckoPrice;
-        change24h = geckoChange || 0;
-        
-        const lastCandleClose = candles[candles.length - 1].close;
-        const scaleMultiplier = currentPrice / lastCandleClose;
-        
-        candles = candles.map(c => ({
-          ...c,
-          open: parseFloat((c.open * scaleMultiplier).toFixed(4)),
-          high: parseFloat((c.high * scaleMultiplier).toFixed(4)),
-          low: parseFloat((c.low * scaleMultiplier).toFixed(4)),
-          close: parseFloat((c.close * scaleMultiplier).toFixed(4))
-        }));
+        change24h = Number.isFinite(geckoChange) ? (geckoChange || 0) : 0;
       } else {
         // Fallback jika CoinGecko gagal: gunakan harga mentah Yahoo Finance langsung
-        currentPrice = candles[candles.length - 1].close;
+        const lastClose = candles[candles.length - 1].close;
+        currentPrice = lastClose;
         const dayAgoTime = Date.now() - 24 * 60 * 60 * 1000;
         const dayAgoCandle = candles.find(c => c.time >= dayAgoTime) || candles[0];
-        change24h = ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100;
+        change24h = dayAgoCandle && dayAgoCandle.close ? ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100 : 0;
+        if (candles.length > 1 && candles[candles.length - 1].open === 0) {
+          // Guard against zero-basis division that would produce NaN/Infinity
+          change24h = candles[candles.length - 1].high > 0 ? change24h : 0;
+        }
       }
     } else {
       const rawCandles = klineRes.result.list.map(c => ({
@@ -696,12 +768,14 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       currentPrice = candles[candles.length - 1].close;
 
       const tickerUrl = `https://api.bytick.com/v5/market/tickers?category=linear&symbol=${symbol}`;
-      const tickerRes = await fetch(tickerUrl).then(r => r.json()).catch(() => null);
+      const tickerRes = await fetchWithTimeout(tickerUrl, {}, 8000).then(r => r.json()).catch(() => null);
       if (tickerRes?.result?.list?.[0]) {
         change24h = parseFloat(tickerRes.result.list[0].price24hPcnt) * 100;
       } else {
-        const open24h = candles[0].open;
-        change24h = ((currentPrice - open24h) / open24h) * 100;
+        // Compare against the candle ~24h ago, not the oldest fetched candle (BUG-1)
+        const dayAgoTime = Date.now() - 24 * 60 * 60 * 1000;
+        const dayAgoCandle = candles.find(c => c.time >= dayAgoTime) || candles[0];
+        change24h = dayAgoCandle && dayAgoCandle.open ? ((currentPrice - dayAgoCandle.open) / dayAgoCandle.open) * 100 : 0;
       }
     }
 
@@ -745,10 +819,12 @@ app.get('/api/sentiment/crypto', async (req, res) => {
       hp.points.D.index = clamp(hp.points.D.index);
     }
 
+    const safeChange = Number.isFinite(change24h) ? change24h : 0;
+
     res.json({
       symbol,
       price: currentPrice,
-      change24h: parseFloat(change24h.toFixed(2)),
+      change24h: parseFloat(safeChange.toFixed(2)),
       buyRatio: parseFloat(buyRatio.toFixed(4)),
       sellRatio: parseFloat(sellRatio.toFixed(4)),
       status: sentimentStatus,
@@ -757,18 +833,29 @@ app.get('/api/sentiment/crypto', async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('crypto endpoint error:', err.message);
+    res.status(500).json({ error: 'Failed to load market data.' });
   }
 });
 
 // ----------------------------------------------------
 // API 2: Forex & Gold Sentiment (Yahoo Finance Feed)
 // ----------------------------------------------------
-app.get('/api/sentiment/forex', async (req, res) => {
+app.get('/api/sentiment/forex', rateLimit, async (req, res) => {
   const { symbol, period } = req.query;
+
+  const ALLOWED_PERIODS = new Set(['M1','M5','M15','M30','H1','H2','H3','H4','D1','W1','1M','1month']);
+  // Allowlist Yahoo symbols used by this app (FX pairs, commodity/futures, indices).
+  const FOREX_SYMBOL_RE = /^(?:[A-Z]{6}=X|(?:GC|SI|HG|CL|NG|BZ|YM|NQ|ES)=F|\^(?:FTSE|N225|IBEX))$/;
 
   if (!symbol || !period) {
     return res.status(400).json({ error: 'Missing parameters symbol or period' });
+  }
+  if (typeof symbol !== 'string' || !FOREX_SYMBOL_RE.test(symbol)) {
+    return res.status(404).json({ error: 'Unknown or unsupported symbol. No data source available for this asset.' });
+  }
+  if (typeof period !== 'string' || !ALLOWED_PERIODS.has(period)) {
+    return res.status(400).json({ error: 'Invalid period' });
   }
 
   try {
@@ -788,12 +875,24 @@ app.get('/api/sentiment/forex', async (req, res) => {
     else if (period === '1M' || period === '1month') { yfInterval = '1mo'; yfRange = '1800d'; }
 
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yfInterval}&range=${yfRange}`;
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-    const data = await response.json();
+    let response;
+    try {
+      response = await fetchWithTimeout(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      }, 10000);
+    } catch (yfErr) {
+      console.warn('Yahoo fetch failed (forex):', yfErr.message);
+      return res.status(502).json({ error: 'Failed to fetch klines from Yahoo Finance' });
+    }
+    let data;
+    try {
+      data = await response.json();
+    } catch (jsonErr) {
+      console.warn('Yahoo JSON parse failed (forex):', jsonErr.message);
+      return res.status(502).json({ error: 'Failed to fetch klines from Yahoo Finance' });
+    }
 
     if (!data.chart?.result?.[0]) {
       return res.status(502).json({ error: 'Failed to fetch klines from Yahoo Finance' });
@@ -825,9 +924,9 @@ app.get('/api/sentiment/forex', async (req, res) => {
     if (period === 'H2' || period === 'H3' || period === 'H4') {
       const multiplier = period === 'H2' ? 2 : period === 'H3' ? 3 : 4;
       const aggregated = [];
-      for (let i = 0; i < candles.length; i += multiplier) {
+      for (let i = 0; i + multiplier <= candles.length; i += multiplier) {
         const chunk = candles.slice(i, i + multiplier);
-        if (chunk.length > 0) {
+        if (chunk.length === multiplier) {
           aggregated.push({
             time: chunk[0].time,
             open: chunk[0].open,
@@ -850,7 +949,8 @@ app.get('/api/sentiment/forex', async (req, res) => {
 
     const dayAgoTime = Date.now() - 24 * 60 * 60 * 1000;
     const dayAgoCandle = candles.find(c => c.time >= dayAgoTime) || candles[0];
-    const change24h = ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100;
+    const change24h = dayAgoCandle && dayAgoCandle.close ? ((currentPrice - dayAgoCandle.close) / dayAgoCandle.close) * 100 : 0;
+    const safeChange = Number.isFinite(change24h) ? change24h : 0;
 
     if (analysis.indicators.harmonicPattern && analysis.indicators.harmonicPattern.points) {
       const hp = analysis.indicators.harmonicPattern;
@@ -866,7 +966,7 @@ app.get('/api/sentiment/forex', async (req, res) => {
     res.json({
       symbol,
       price: currentPrice,
-      change24h: parseFloat(change24h.toFixed(2)),
+      change24h: parseFloat(safeChange.toFixed(2)),
       buyRatio: analysis.buyRatio,
       sellRatio: analysis.sellRatio,
       status: analysis.status,
@@ -875,7 +975,8 @@ app.get('/api/sentiment/forex', async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('forex endpoint error:', err.message);
+    res.status(500).json({ error: 'Failed to load market data.' });
   }
 });
 
@@ -883,7 +984,7 @@ app.get('/api/sentiment/forex', async (req, res) => {
 // ----------------------------------------------------
 // API 3: Live Real-Time Financial News Feed (ForexLive/Yahoo RSS)
 // ----------------------------------------------------
-app.get('/api/news', async (req, res) => {
+app.get('/api/news', rateLimit, async (req, res) => {
   try {
     const urls = [
       'https://www.forexlive.com/feed',
@@ -893,56 +994,15 @@ app.get('/api/news', async (req, res) => {
     ];
 
     const feedPromises = urls.map(url => 
-      fetch(url, {
+      fetchWithTimeout(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-      })
+      }, 8000)
       .then(res => res.ok ? res.text() : '')
       .catch(() => '')
     );
 
     const results = await Promise.all(feedPromises);
     let parsedNews = [];
-
-    // Permanent Pinned Ultra High Impact Macro News (berlaku lama)
-    const now = new Date();
-    const pinnedNews = [
-      {
-        title: "FEDERAL RESERVE MONETARY POLICY: US Interest Rates Kept at 5.25% - 5.50% Range as Inflation Remains Sticky",
-        link: "https://www.federalreserve.gov",
-        pubDate: new Date(now - 12 * 3600 * 1000).toUTCString(),
-        description: "FOMC statement confirms rates will remain elevated until inflation prints closer to the 2.0% target. FED Chairman Powell emphasizes data-dependence. This policy keeps the US Dollar strong against global pairs.",
-        impact: "ULTRA HIGH",
-        isPinned: true,
-        category: "The Fed / Monetary Policy"
-      },
-      {
-        title: "GEOPOLITICAL ESCALATION: Tensions Reach Critical Levels Across US-Israel-Iran-Lebanon-Yemen-Russia-Ukraine-Taiwan Regions",
-        link: "https://www.reuters.com",
-        pubDate: new Date(now - 4 * 3600 * 1000).toUTCString(),
-        description: "Global geopolitical risk stays extremely elevated. Conflict and border tensions trigger safe-haven capital inflow into Gold spot and defensive assets, creating structural market distortions.",
-        impact: "ULTRA HIGH",
-        isPinned: true,
-        category: "Global Geopolitics"
-      },
-      {
-        title: "BANK OF JAPAN SHIFT: BoJ Normalizes Policy Rate to 0.25%, Ueda Signals Long-Term Quantitative Tightening Cycles",
-        link: "https://www.boj.or.jp",
-        pubDate: new Date(now - 18 * 3600 * 1000).toUTCString(),
-        description: "Governor Ueda states interest rates will continue to climb if Japanese CPI and wage increases remain stable. This signals structural normalization, supporting Yen strength.",
-        impact: "ULTRA HIGH",
-        isPinned: true,
-        category: "Bank of Japan / Yen"
-      },
-      {
-        title: "AI INNOVATION BOOM: OpenAI Launches Advanced Reasoning Core (GPT-5/Strawberry) & Nvidia Blackwell GPUs Face High Demand",
-        link: "https://www.nvidia.com",
-        pubDate: new Date(now - 2 * 3600 * 1000).toUTCString(),
-        description: "Generative AI developments accelerate rapidly. Advanced chip demands and AI startups investments continue to dominate global tech capital flow, boosting Nasdaq (USA100) indices.",
-        impact: "ULTRA HIGH",
-        isPinned: true,
-        category: "AI & Technology"
-      }
-    ];
 
     for (const rssText of results) {
       if (!rssText) continue;
@@ -956,7 +1016,9 @@ app.get('/api/news', async (req, res) => {
         if (titleMatch) {
           let title = titleMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
           let link = linkMatch ? linkMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '#';
-          let pubDate = pubDateMatch ? pubDateMatch[1].trim() : new Date().toUTCString();
+          // Only allow safe http(s) links to prevent javascript: URL XSS
+          if (!/^https?:\/\//i.test(link)) link = '#';
+          let pubDate = pubDateMatch ? pubDateMatch[1].trim() : '';
           let description = descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]*>/g, '').slice(0, 150).trim() + '...' : '';
 
           let impact = 'LOW';
@@ -1024,88 +1086,53 @@ app.get('/api/news', async (req, res) => {
       }
     }
 
-    // Sort RSS news by date
-    parsedNews.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-
-    // Combine: Pinned news always sits at the top, followed by parsed news
-    let news = [...pinnedNews, ...parsedNews];
+    // Sort RSS news by date (guard against invalid dates)
+    const dateTime = d => { const t = new Date(d).getTime(); return Number.isNaN(t) ? 0 : t; };
+    parsedNews.sort((a, b) => dateTime(b.pubDate) - dateTime(a.pubDate));
 
     // Cap at 30 items for news terminal richness
-    news = news.slice(0, 30);
-
-    if (news.length === 0) {
-      const now = new Date();
-      news = [
-        {
-          title: "US Consumer Price Index (CPI) Inflation Rises Sticky at 3.1% YoY, Igniting Volatility in Gold and Forex",
-          link: "#",
-          pubDate: new Date(now - 10 * 60 * 1000).toUTCString(),
-          description: "Higher inflation data forces the Federal Reserve to keep interest rates elevated, causing a significant bullish impulse on the US Dollar index.",
-          impact: "HIGH"
-        },
-        {
-          title: "Fed Chair Powell Signals Delayed Interest Rate Cuts Amid Persistent Wage Growth",
-          link: "#",
-          pubDate: new Date(now - 45 * 60 * 1000).toUTCString(),
-          description: "Powell explicitly stated that the central bank needs 'more confidence' that inflation is moving toward 2% before beginning easing cycles.",
-          impact: "HIGH"
-        },
-        {
-          title: "US Non-Farm Payrolls (NFP) Surges by 215k; Unemployment Rate Drops Unexpectedly to 3.8%",
-          link: "#",
-          pubDate: new Date(now - 110 * 60 * 1000).toUTCString(),
-          description: "Hot labor market print cements hawkish bias. Option markets repriced the first Fed rate cut expectation to December.",
-          impact: "HIGH"
-        },
-        {
-          title: "Geopolitical Crisis Escalates: Gold Breaches All-Time Highs on Safe-Haven Bid",
-          link: "#",
-          pubDate: new Date(now - 180 * 60 * 1000).toUTCString(),
-          description: "Flight to safety triggers heavy capital inflow into XAUUSD, breaking through key psychological resistance as equity indices drop.",
-          impact: "HIGH"
-        },
-        {
-          title: "Trump Declares New 10% Universal Import Tariffs, Triggering Risk-Off Move and Dollar Rally",
-          link: "#",
-          pubDate: new Date(now - 240 * 60 * 1000).toUTCString(),
-          description: "Proposed trade policy fires up inflation fears globally. Major currency pairs plunge against the safe-haven greenback.",
-          impact: "HIGH"
-        }
-      ];
-    }
+    const news = parsedNews.slice(0, 30);
 
     res.json({ news });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('news endpoint error:', err.message);
+    res.status(500).json({ error: 'Failed to load news feed.' });
   }
 });
 
 // ----------------------------------------------------
 // API 4: Live Gemini 2.0 Flash LLM AI Assessment
 // ----------------------------------------------------
-app.post('/api/ai-assessment', async (req, res) => {
+app.post('/api/ai-assessment', rateLimit, async (req, res) => {
   try {
     const { asset, newsList } = req.body || {};
-    if (!asset || !asset.id) {
-      return res.status(400).json({ error: 'Missing asset payload' });
+    if (!asset || typeof asset !== 'object' || !asset.id || typeof asset.id !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid asset payload' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || req.headers['x-gemini-api-key'];
+    const serverKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+    const clientKey = serverKey ? '' : (req.headers['x-gemini-api-key'] || '');
+    const apiKey = serverKey || clientKey;
 
-    const symbol = asset.id;
-    const name = asset.name || symbol;
-    const price = asset.price || 0;
-    const buyRatio = asset.buyRatio ? (asset.buyRatio * 100).toFixed(1) : "50.0";
-    const sellRatio = asset.sellRatio ? (asset.sellRatio * 100).toFixed(1) : "50.0";
-    const status = asset.status || 'HEALTHY';
-    const indicators = asset.indicators || {};
-    const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
-    const ema50 = indicators.ema50 || price;
-    const sma20 = indicators.sma20 || price;
-    const macdHist = indicators.macd?.histogram || 0;
-    const harmonicName = indicators.harmonicPattern?.pattern || 'None';
+    const safeNum = v => (typeof v === 'number' && Number.isFinite(v)) ? v : 0;
+    const symbol = String(asset.id).slice(0, 40);
+    const name = asset.name ? String(asset.name).slice(0, 60) : symbol;
+    const price = safeNum(asset.price);
+    const buyRatio = (typeof asset.buyRatio === 'number' && Number.isFinite(asset.buyRatio)) ? (asset.buyRatio * 100).toFixed(1) : "50.0";
+    const sellRatio = (typeof asset.sellRatio === 'number' && Number.isFinite(asset.sellRatio)) ? (asset.sellRatio * 100).toFixed(1) : "50.0";
+    const status = asset.status ? String(asset.status).slice(0, 30) : 'HEALTHY';
+    const indicators = asset.indicators && typeof asset.indicators === 'object' ? asset.indicators : {};
+    const rsi = safeNum(indicators.rsi) || 50;
+    const ema50 = safeNum(indicators.ema50) || price || 0;
+    const sma20 = safeNum(indicators.sma20) || price || 0;
+    const macdHist = safeNum(indicators.macd?.histogram);
+    const harmonicName = indicators.harmonicPattern?.pattern ? String(indicators.harmonicPattern.pattern).slice(0, 40) : 'None';
 
-    const recentNewsTitles = (newsList || []).slice(0, 5).map(n => n.title).join('; ');
+    const newsTitles = Array.isArray(newsList) ? newsList
+      .filter(n => n && typeof n.title === 'string')
+      .slice(0, 5)
+      .map(n => String(n.title).slice(0, 160)) : [];
+    const recentNewsTitles = newsTitles.join('; ');
 
     const promptText = `Anda adalah Antigravity AI, seorang analis kuantitatif pasar keuangan institusional.
 Berikan penilaian taktis pasar secara mendalam dalam bahasa Indonesia untuk aset berikut:
@@ -1138,10 +1165,10 @@ Kembalikan jawaban HANYA dalam format JSON valid tanpa markdown fence berikut:
 
     if (apiKey) {
       try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        const geminiRes = await fetch(geminiUrl, {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
+        const geminiRes = await fetchWithTimeout(geminiUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents: [{ parts: [{ text: promptText }] }],
             generationConfig: {
@@ -1149,7 +1176,7 @@ Kembalikan jawaban HANYA dalam format JSON valid tanpa markdown fence berikut:
               responseMimeType: "application/json"
             }
           })
-        });
+        }, 15000);
 
         if (geminiRes.ok) {
           const geminiData = await geminiRes.json();
@@ -1157,16 +1184,26 @@ Kembalikan jawaban HANYA dalam format JSON valid tanpa markdown fence berikut:
           if (rawText) {
             const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
             const parsed = JSON.parse(cleanJson);
-            
+
+            // Schema/type safety: coerce numeric fields to finite numbers and isBullish to boolean
+            const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+            parsed.isBullish = parsed.isBullish === true;
+            parsed.entry = num(parsed.entry);
+            parsed.sl = num(parsed.sl);
+            parsed.tp = num(parsed.tp);
+            parsed.confidence = num(parsed.confidence);
+            if (parsed.entry == null) parsed.entry = price;
+            if (parsed.confidence == null) parsed.confidence = 80;
+
             // Double check SL / TP logic safety
             let isBull = parsed.isBullish;
             let slVal = parsed.sl;
             let tpVal = parsed.tp;
 
-            if (isBull && (slVal >= price || tpVal <= price)) {
+            if (isBull && (slVal == null || tpVal == null || slVal >= price || tpVal <= price)) {
               slVal = parseFloat((price * 0.985).toFixed(price > 100 ? 2 : 4));
               tpVal = parseFloat((price * 1.03).toFixed(price > 100 ? 2 : 4));
-            } else if (!isBull && (slVal <= price || tpVal >= price)) {
+            } else if (!isBull && (slVal == null || tpVal == null || slVal <= price || tpVal >= price)) {
               slVal = parseFloat((price * 1.015).toFixed(price > 100 ? 2 : 4));
               tpVal = parseFloat((price * 0.97).toFixed(price > 100 ? 2 : 4));
             }
@@ -1205,10 +1242,11 @@ Kembalikan jawaban HANYA dalam format JSON valid tanpa markdown fence berikut:
         ? `[Antigravity Quant Engine] Penumpukan likuiditas pembeli terdeteksi di area diskon di bawah ${price}. RSI (${rsi}) & EMA 50 mengonfirmasi bias bullish dengan dominasi tekanan pasar terhadap kerumunan ritel.`
         : `[Antigravity Quant Engine] Penolakan pasokan institusi terdeteksi di atas resistance ${price}. RSI (${rsi}) & EMA 50 menunjukkan momentum bearish.`,
       isLiveLLM: false,
-      model: 'Quant Algorithm (Masukkan GEMINI_API_KEY di Vercel/Settings untuk Aktifkan Live Gemini 2.0 Flash LLM)'
+      model: 'Quant Algorithm (Add GEMINI_API_KEY in Vercel Settings to enable Live Gemini 2.0 Flash LLM)'
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('ai-assessment error:', e.message);
+    res.status(500).json({ error: 'Internal server error processing assessment.' });
   }
 });
 

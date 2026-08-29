@@ -155,15 +155,11 @@
       { id: 'BTC', name: 'Bitcoin', symbol: 'BTCUSDT', type: 'crypto', apiSymbol: 'BTCUSDT' },
       { id: 'ETH', name: 'Ethereum', symbol: 'ETHUSDT', type: 'crypto', apiSymbol: 'ETHUSDT' },
       { id: 'SOL', name: 'Solana', symbol: 'SOLUSDT', type: 'crypto', apiSymbol: 'SOLUSDT' },
-      { id: 'HYPE', name: 'Hyperliquid', symbol: 'HYPEUSDT', type: 'crypto', apiSymbol: 'HYPEUSDT' },
-      { id: 'ASTER', name: 'Aster DEX', symbol: 'ASTERUSDT', type: 'crypto', apiSymbol: 'ASTERUSDT' },
       { id: 'LTC', name: 'Litecoin', symbol: 'LTCUSDT', type: 'crypto', apiSymbol: 'LTCUSDT' },
       { id: 'XRP', name: 'Ripple', symbol: 'XRPUSDT', type: 'crypto', apiSymbol: 'XRPUSDT' },
       { id: 'DOGE', name: 'Dogecoin', symbol: 'DOGEUSDT', type: 'crypto', apiSymbol: 'DOGEUSDT' },
       { id: 'LINK', name: 'Chainlink', symbol: 'LINKUSDT', type: 'crypto', apiSymbol: 'LINKUSDT' },
       { id: 'TRX', name: 'Tron', symbol: 'TRXUSDT', type: 'crypto', apiSymbol: 'TRXUSDT' },
-      { id: 'LIT', name: 'Lighter', symbol: 'LITUSDT', type: 'crypto', apiSymbol: 'LITUSDT' },
-      { id: 'ANSEM', name: 'Ansem', symbol: 'ANSEMUSDT', type: 'crypto', apiSymbol: 'ANSEMUSDT' },
       
       // XAU (Gold) (Yahoo Finance)
       { id: 'XAU', name: 'Gold Spot', symbol: 'XAUUSD', type: 'forex', apiSymbol: 'GC=F' },
@@ -322,6 +318,7 @@
         }
       }, [theme]);
       const [serverConnected, setServerConnected] = useState(true);
+      const fetchAllSeqRef = useRef(0);
       const [newsList, setNewsList] = useState([]);
       const [isNewsLoading, setIsNewsLoading] = useState(false);
 
@@ -342,7 +339,7 @@
         } catch (err) {
           console.error("Failed to fetch news:", err.message);
         } finally {
-          setTimeout(() => setIsNewsLoading(false), 500);
+          setIsNewsLoading(false);
         }
       };
       
@@ -360,6 +357,7 @@
 
       const fetchAllData = async (timeframe) => {
         setLoading(true);
+        const mySeq = ++fetchAllSeqRef.current;
         const newData = { ...marketData };
         const targetAssets = ALL_ASSETS.filter(a => activeAssetsList.includes(a.id));
 
@@ -378,20 +376,27 @@
               const res = await fetch(url);
               if (!res.ok) throw new Error(`HTTP error ${res.status}`);
               const json = await res.json();
-              newData[asset.id] = { ...asset, ...json, lastUpdated: Date.now(), activeTf };
+              newData[asset.id] = { ...asset, ...json, isOffline: false, lastUpdated: Date.now(), activeTf };
             } catch (err) {
               console.error(`Error fetching ${asset.id}:`, err.message);
-              newData[asset.id] = { ...createMockData(asset, activeTf), activeTf };
+              newData[asset.id] = { ...asset, isOffline: true, price: null, change24h: null, candles: [], indicators: {}, lastUpdated: Date.now(), activeTf };
             }
           }));
           
-          setMarketData(newData);
-          setServerConnected(true);
+          // Discard stale results if a newer fetch has started since this one began
+          if (mySeq === fetchAllSeqRef.current) {
+            setMarketData(newData);
+            setServerConnected(true);
+          }
         } catch (err) {
-          setError('Gagal menghubungkan ke proxy server.');
-          setServerConnected(false);
+          if (mySeq === fetchAllSeqRef.current) {
+            setError('Gagal menghubungkan ke proxy server.');
+            setServerConnected(false);
+          }
         } finally {
-          setLoading(false);
+          if (mySeq === fetchAllSeqRef.current) {
+            setLoading(false);
+          }
         }
       };
 
@@ -404,80 +409,15 @@
           const json = await res.json();
           setMarketData(prev => ({
             ...prev,
-            [asset.id]: { ...asset, ...json, lastUpdated: Date.now(), activeTf: tf }
+            [asset.id]: { ...asset, ...json, isOffline: false, lastUpdated: Date.now(), activeTf: tf }
           }));
         } catch (err) {
           console.error(`Error fetching single ${asset.id}:`, err.message);
           setMarketData(prev => ({
             ...prev,
-            [asset.id]: { ...createMockData(asset, tf), activeTf: tf }
+            [asset.id]: { ...asset, isOffline: true, price: null, change24h: null, candles: [], indicators: {}, lastUpdated: Date.now(), activeTf: tf }
           }));
         }
-      };
-
-      const createMockData = (asset, timeframe) => {
-        const mockPrice = asset.type === 'crypto' ? (asset.id === 'BTC' ? 96500 : asset.id === 'ETH' ? 3420 : 158) : (asset.id === 'XAU' ? 2324 : 1.085);
-        const randomChange = (Math.random() * 4 - 2).toFixed(2);
-        const buyRatio = parseFloat((0.3 + Math.random() * 0.4).toFixed(4));
-        const sellRatio = parseFloat((1 - buyRatio).toFixed(4));
-        
-        let status = 'HEALTHY';
-        if (buyRatio > 0.65) status = 'TRAPPED_LONG';
-        else if (sellRatio > 0.65) status = 'TRAPPED_SHORT';
-
-        const candles = [];
-        let price = mockPrice;
-        for (let i = 0; i < 30; i++) {
-          const change = (Math.random() - 0.5) * (price * 0.01);
-          candles.push({
-            time: Date.now() - (30 - i) * 60000,
-            open: price,
-            high: price + Math.abs(change) * 1.2,
-            low: price - Math.abs(change) * 1.2,
-            close: price + change
-          });
-          price += change;
-        }
-
-        const mockFib = {
-          isUptrend: true,
-          highest: mockPrice * 1.02,
-          lowest: mockPrice * 0.98,
-          levels: {
-            '0.000': mockPrice * 1.02,
-            '0.236': mockPrice * 1.01,
-            '0.382': mockPrice * 1.005,
-            '0.500': mockPrice,
-            '0.618': mockPrice * 0.995,
-            '0.786': mockPrice * 0.985,
-            '1.000': mockPrice * 0.98,
-            '-0.272': mockPrice * 1.03,
-            '-0.618': mockPrice * 1.045
-          }
-        };
-
-        return {
-          ...asset,
-          price: mockPrice,
-          change24h: parseFloat(randomChange),
-          buyRatio,
-          sellRatio,
-          status,
-          candles,
-          indicators: { 
-            rsi: 50, 
-            percentB: 0.5, 
-            sma20: mockPrice,
-            ema50: mockPrice,
-            upperBand: mockPrice * 1.02,
-            lowerBand: mockPrice * 0.98,
-            stochastic: { k: 45, d: 43 },
-            macd: { macd: 0.02, signal: 0.015, histogram: 0.005 },
-            ichimoku: { tenkan: mockPrice, kijun: mockPrice, spanA: mockPrice, spanB: mockPrice },
-            fibonacci: mockFib
-          },
-          isMock: true
-        };
       };
 
       useEffect(() => {
@@ -556,9 +496,14 @@
                 </span>
                 <span class={`flex h-2 w-2 rounded-full ${serverConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></span>
                 <span class="text-xs text-zinc-400 font-mono">
-                  {serverConnected ? 'Connected via Node Proxy' : 'Offline Mode (Simulated Data)'}
+                  {serverConnected ? 'Connected via Node Proxy' : 'Offline - Proxy Tidak Dapat Dijangkau'}
                 </span>
               </div>
+              {error && (
+                <div class="mt-3 max-w-xl rounded-xl border border-red-500/30 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-300">
+                  ⚠ {error}
+                </div>
+              )}
               <h1 class="mt-3 font-heading text-3xl font-bold tracking-tight text-white md:text-4xl">
                 Sentinel Sentiment
               </h1>
@@ -832,9 +777,9 @@
             <div class="mt-6 space-y-6">
               <div class="flex items-center justify-between border-b border-white/10 pb-4">
                 <div>
-                  <h2 class="text-xl font-bold text-white uppercase font-heading">Sentinel Live Bloomberg News Terminal</h2>
+                  <h2 class="text-xl font-bold text-white uppercase font-heading">Sentinel Live Market News Terminal</h2>
                   <p class="text-xs text-zinc-400 mt-1">
-                    Terminal berita makroekonomi institusional. Memantau kebijakan bank sentral (Fed/BoJ), inflasi, perang global, dan inovasi AI.
+                    Terminal berita makroekonomi dari umpan RSS pasar keuangan (ForexLive & Yahoo Finance).
                   </p>
                 </div>
                 <button 
@@ -862,22 +807,28 @@
                   </h3>
                   
                   <div class="space-y-3">
-                    {newsList.filter(n => n.isPinned).map((item, idx) => (
-                      <div key={idx} class="rounded-2xl border border-blue-500/25 bg-blue-950/10 p-5 shadow-lg space-y-3 border-l-4 border-l-blue-500">
-                        <div class="flex items-center justify-between gap-2">
-                          <span class="rounded bg-blue-500/20 px-2 py-0.5 text-[9px] font-bold text-blue-400 uppercase font-mono tracking-wider">
-                            {item.category || 'Macro Narrative'}
-                          </span>
-                          <span class="text-[9px] text-zinc-500 font-mono">ACTIVE ALERT</span>
-                        </div>
-                        <h4 class="text-sm font-bold text-white leading-snug">
-                          <a href={item.link} target="_blank" rel="noopener noreferrer" class="hover:text-blue-400 transition-colors">
-                            {item.title}
-                          </a>
-                        </h4>
-                        <p class="text-xs text-zinc-400 leading-relaxed font-sans">{item.description}</p>
+                    {newsList.filter(n => n.isPinned).length === 0 ? (
+                      <div class="rounded-2xl border border-white/5 bg-zinc-900/20 p-5 text-xs text-zinc-500">
+                        Tidak ada laporan makro yang disematkan. Hanya berita <span class="text-zinc-300">High / Ultra High Impact</span> dari umpan berita langsung yang ditampilkan.
                       </div>
-                    ))}
+                    ) : (
+                      newsList.filter(n => n.isPinned).map((item, idx) => (
+                        <div key={idx} class="rounded-2xl border border-blue-500/25 bg-blue-950/10 p-5 shadow-lg space-y-3 border-l-4 border-l-blue-500">
+                          <div class="flex items-center justify-between gap-2">
+                            <span class="rounded bg-blue-500/20 px-2 py-0.5 text-[9px] font-bold text-blue-400 uppercase font-mono tracking-wider">
+                              {item.category || 'Macro Narrative'}
+                            </span>
+                            <span class="text-[9px] text-zinc-500 font-mono">ACTIVE ALERT</span>
+                          </div>
+                          <h4 class="text-sm font-bold text-white leading-snug">
+                            <a href={item.link} target="_blank" rel="noopener noreferrer" class="hover:text-blue-400 transition-colors">
+                              {item.title}
+                            </a>
+                          </h4>
+                          <p class="text-xs text-zinc-400 leading-relaxed font-sans">{item.description}</p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -888,28 +839,34 @@
                   </h3>
                   
                   <div class="grid gap-4 sm:grid-cols-2 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
-                    {newsList.filter(n => !n.isPinned).map((item, idx) => (
-                      <div key={idx} class="rounded-2xl border border-white/5 bg-zinc-900/20 p-4 hover:border-white/10 transition-all flex flex-col justify-between space-y-3">
-                        <div>
-                          <div class="flex items-center justify-between gap-2">
-                            <span class={`rounded px-2 py-0.5 text-[8px] font-bold tracking-wider uppercase ${
-                              item.impact === 'ULTRA HIGH' 
-                                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
-                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                            }`}>
-                              {item.impact} IMPACT
-                            </span>
-                            <span class="text-[9px] text-zinc-500 font-mono">
-                              {new Date(item.pubDate).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(item.pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                          <h4 class="mt-2.5 text-xs font-bold text-white hover:text-green-400 transition-colors leading-relaxed">
-                            <a href={item.link} target="_blank" rel="noopener noreferrer">{item.title}</a>
-                          </h4>
-                          <p class="mt-2 text-[11px] text-zinc-400 leading-relaxed line-clamp-3">{item.description}</p>
-                        </div>
+                    {newsList.filter(n => !n.isPinned).length === 0 ? (
+                      <div class="col-span-full rounded-2xl border border-white/5 bg-zinc-900/20 p-6 text-center text-xs text-zinc-500">
+                        {isNewsLoading ? 'Memuat umpan berita...' : 'Belum ada berita High Impact dari umpan RSS saat ini.'}
                       </div>
-                    ))}
+                    ) : (
+                      newsList.filter(n => !n.isPinned).map((item, idx) => (
+                        <div key={idx} class="rounded-2xl border border-white/5 bg-zinc-900/20 p-4 hover:border-white/10 transition-all flex flex-col justify-between space-y-3">
+                          <div>
+                            <div class="flex items-center justify-between gap-2">
+                              <span class={`rounded px-2 py-0.5 text-[8px] font-bold tracking-wider uppercase ${
+                                item.impact === 'ULTRA HIGH' 
+                                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
+                                  : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                              }`}>
+                                {item.impact} IMPACT
+                              </span>
+                              <span class="text-[9px] text-zinc-500 font-mono">
+                                {(() => { const d = new Date(item.pubDate); return isNaN(d.getTime()) ? 'waktu tidak diketahui' : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`; })()}
+                              </span>
+                            </div>
+                            <h4 class="mt-2.5 text-xs font-bold text-white hover:text-green-400 transition-colors leading-relaxed">
+                              <a href={item.link} target="_blank" rel="noopener noreferrer">{item.title}</a>
+                            </h4>
+                            <p class="mt-2 text-[11px] text-zinc-400 leading-relaxed line-clamp-3">{item.description}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -924,7 +881,7 @@
           {activeAsset && (
             <DetailModal
               asset={marketData[activeAsset.id] || activeAsset}
-              timeframe={customTimeframes[activeAsset.id] || selectedTimeframe}
+              timeframe={(customTimeframes[activeAsset.id] || selectedTimeframe) === 'None' ? 'H1' : (customTimeframes[activeAsset.id] || selectedTimeframe)}
               newsList={newsList}
               theme={theme}
               onTimeframeChange={(newTf) => {
@@ -951,6 +908,33 @@
             <div class="h-6 w-24 bg-white/[0.05] rounded"></div>
             <div class="h-10 w-full bg-white/[0.05] rounded"></div>
             <div class="h-4 w-32 bg-white/[0.05] rounded"></div>
+          </div>
+        );
+      }
+
+      if (data.isOffline || data.price == null) {
+        return (
+          <div
+            onClick={onClick}
+            class="group flex min-h-[260px] flex-col justify-between rounded-3xl border border-amber-500/30 bg-zinc-950 p-6 cursor-pointer"
+          >
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-mono text-xs font-bold text-zinc-500 tracking-wider uppercase">{data.id}</span>
+                  <span class="flex h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                  <span class="text-[8px] font-bold text-amber-500 tracking-wider">OFFLINE</span>
+                </div>
+                <h3 class="mt-1 font-heading text-lg font-bold text-white">{data.name}</h3>
+              </div>
+              <span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[9px] font-bold tracking-wider uppercase text-amber-400">NO DATA</span>
+            </div>
+            <div class="mt-4 flex items-center gap-2">
+              <span class="text-xl font-bold tracking-tight text-amber-400">OFFLINE</span>
+            </div>
+            <div class="mt-5 rounded-xl border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-center text-[11px] font-semibold text-amber-300">
+              Data tidak tersedia. Aset ini tidak memiliki sumber data real-time yang valid.
+            </div>
           </div>
         );
       }
@@ -1068,12 +1052,14 @@
       
       const [liveLlmData, setLiveLlmData] = useState(null);
       const [isLlmLoading, setIsLlmLoading] = useState(false);
-      const [userApiKey, setUserApiKey] = useState(() => localStorage.getItem('sentinel_gemini_key') || '');
+      const [userApiKey, setUserApiKey] = useState('');
       const [showKeyInput, setShowKeyInput] = useState(false);
+      const [keyUsedThisSession, setKeyUsedThisSession] = useState(false);
 
       const fetchLiveLlmAnalysis = async (customKey) => {
         setIsLlmLoading(true);
-        const keyToUse = customKey !== undefined ? customKey : userApiKey;
+        // Only forward a client-provided Gemini key when the user explicitly requested it this session.
+        const keyToUse = customKey !== undefined ? customKey : (keyUsedThisSession ? userApiKey : '');
         try {
           const res = await fetch('/api/ai-assessment', {
             method: 'POST',
@@ -1745,48 +1731,6 @@
       }, [asset, isFullscreen, theme]);
 
       // Calculate Fibonacci-based Trade Setup
-      const getTradeSetup = () => {
-        const fib = asset.indicators ? asset.indicators.fibonacci : null;
-        if (!fib || !fib.levels) return null;
-
-        const bias = getContrarianBias(asset.buyRatio);
-        const isBullish = bias.includes('BULLISH');
-        const isBearish = bias.includes('BEARISH');
-
-        let entryMin, entryMax, stopLoss, tp1, tp2, tp3;
-
-        if (isBullish) {
-          // Uptrend logic / buy target
-          entryMin = fib.levels['0.618'];
-          entryMax = fib.levels['0.500'];
-          stopLoss = fib.levels['0.786'] * 0.998; // SL slightly below 78.6%
-          tp1 = fib.levels['0.000']; // Swing High
-          tp2 = fib.levels['-0.272']; // Extension -0.272
-          tp3 = fib.levels['-0.618']; // Extension -0.618
-        } else {
-          // Downtrend logic / sell target (default or bearish)
-          entryMin = fib.levels['0.500'];
-          entryMax = fib.levels['0.618'];
-          stopLoss = fib.levels['0.786'] * 1.002; // SL slightly above 78.6%
-          tp1 = fib.levels['0.000']; // Swing Low
-          tp2 = fib.levels['-0.272']; // Extension -0.272
-          tp3 = fib.levels['-0.618']; // Extension -0.618
-        }
-
-        const format = (v) => v.toLocaleString('en-US', { minimumFractionDigits: asset.price > 100 ? 2 : 4 });
-
-        return {
-          isBullish,
-          entryRange: `${format(entryMin)} - ${format(entryMax)}`,
-          stopLoss: format(stopLoss),
-          tp1: format(tp1),
-          tp2: format(tp2),
-          tp3: format(tp3),
-          raw: { entryMin, entryMax, stopLoss, tp1, tp2, tp3 }
-        };
-      };
-
-      const setup = getTradeSetup();
       const longPct = (asset.buyRatio * 100).toFixed(1);
       const shortPct = (asset.sellRatio * 100).toFixed(1);
 
@@ -2037,6 +1981,7 @@
                       {showKeyInput && (
                         <div class="mt-3 p-3 rounded-xl bg-zinc-900/90 border border-violet-500/30 text-xs space-y-2 font-mono">
                           <p class="text-[10px] text-zinc-400">Masukkan Gemini API Key gratis dari Google AI Studio (aistudio.google.com):</p>
+                          <p class="text-[9px] text-amber-400/80">Perhatian: key akan dikirim ke backend Sentinel (server Anda) untuk memanggil API Gemini, dan disimpan di browser Anda. Gunakan key terpisah/khusus jika tidak ingin membaginya dengan operator situs.</p>
                           <div class="flex gap-2">
                             <input
                               type="password"
@@ -2047,13 +1992,14 @@
                             />
                             <button
                               onClick={() => {
-                                localStorage.setItem('sentinel_gemini_key', userApiKey);
+                                if (userApiKey) localStorage.setItem('sentinel_gemini_key', userApiKey);
+                                setKeyUsedThisSession(true);
                                 setShowKeyInput(false);
-                                fetchLiveLlmAnalysis(userApiKey);
+                                fetchLiveLlmAnalysis(userApiKey || undefined);
                               }}
                               class="px-3 py-1 bg-violet-600 hover:bg-violet-500 text-white rounded font-bold text-[10px]"
                             >
-                              Simpan
+                              Simpan & Analisis
                             </button>
                           </div>
                         </div>
@@ -2252,7 +2198,7 @@
 
             {/* Modal Footer */}
             <div class="mt-6 border-t border-white/5 pt-4 flex items-center justify-between font-mono text-[10px] text-zinc-500">
-              <span>Data Source: {asset.type === 'crypto' ? 'Bybit Futures API Realtime' : 'Yahoo Finance Candle API Synthesized'}</span>
+              <span>Data Source: {asset.isOffline ? 'Tidak Tersedia (Offline)' : (asset.type === 'crypto' ? 'Bybit Futures + Yahoo Finance' : 'Yahoo Finance')}</span>
               <button 
                 onClick={onClose}
                 class="rounded-xl bg-zinc-800 hover:bg-zinc-750 text-white px-5 py-2 text-xs font-bold transition-all-300"
@@ -2300,19 +2246,26 @@
             setCustomTPStr((entry - atrEst * 2.0).toFixed(entry > 100 ? 2 : 5));
           }
         }
-      }, [selectedAssetId, tradeDirection]);
+      }, [selectedAssetId, tradeDirection, liveAssetData && liveAssetData.price, liveAssetData && liveAssetData.activeTf]);
 
       const calculateAiRecommendation = () => {
-        // Parse inputs, using defaults if empty
-        const balance = parseFloat(accountSizeStr) || 10000;
+        // Parse inputs, using defaults if empty (and reject/clamp negative or invalid values)
+        const rawBalance = parseFloat(accountSizeStr);
+        const balance = Number.isFinite(rawBalance) && rawBalance > 0 ? rawBalance : 10000;
         const entry = parseFloat(customEntryStr) || (liveAssetData ? liveAssetData.price : 0);
-        const reward = parseFloat(rewardValueStr) || 2;
+        const rawReward = parseFloat(rewardValueStr);
+        const reward = Number.isFinite(rawReward) && rawReward > 0 ? rawReward : 2;
         
-        let riskVal = parseFloat(riskValueStr) || 0;
-        const expProfit = parseFloat(expectedProfitStr) || 0;
-        const lots = parseFloat(lotsInputStr) || 0;
-        const slInput = parseFloat(customSLStr) || 0;
-        const tpInput = parseFloat(customTPStr) || 0;
+        const rawRisk = parseFloat(riskValueStr);
+        let riskVal = Number.isFinite(rawRisk) && rawRisk > 0 ? rawRisk : 0;
+        const rawExpProfit = parseFloat(expectedProfitStr);
+        const expProfit = Number.isFinite(rawExpProfit) && rawExpProfit > 0 ? rawExpProfit : 0;
+        const rawLots = parseFloat(lotsInputStr);
+        const lots = Number.isFinite(rawLots) && rawLots > 0 ? rawLots : 0;
+        const rawSl = parseFloat(customSLStr);
+        const slInput = Number.isFinite(rawSl) && rawSl > 0 ? rawSl : 0;
+        const rawTp = parseFloat(customTPStr);
+        const tpInput = Number.isFinite(rawTp) && rawTp > 0 ? rawTp : 0;
         const isBuyMode = tradeDirection === 'BUY';
 
         let logs = [];
@@ -2361,8 +2314,17 @@
           logs.push(`Solusi Target Profit AI (R:R 1:${reward}): $${expectedProfitUSD.toFixed(2)}`);
         }
 
-        // Contract size definition for Forex / Gold
-        const contractSize = activeAsset.id === 'XAU' ? 100 : (activeAsset.type === 'forex' ? 100000 : 1);
+        // Contract size per instrument (Forex lots, Gold, index CFDs, crypto)
+        const CONTRACT_SIZES = {
+          XAU: 100,
+          USA30: 5,
+          USA100: 20,
+          USA500: 50,
+          UK100: 10,
+          JPN225: 1000,
+          SPA35: 10
+        };
+        const contractSize = CONTRACT_SIZES[activeAsset.id] ?? (activeAsset.type === 'forex' ? 100000 : 1);
 
         // 2. Solve for Stop Loss (SL)
         let recSL = slInput;
@@ -2722,184 +2684,6 @@
             </div>
           </div>
         </section>
-      );
-    }
-
-    // ====================================================
-    // Playbook Sub-Component
-    // ====================================================
-    function ContrarianPlaybook({ asset, timeframe }) {
-      const longPct = (asset.buyRatio * 100).toFixed(1);
-      const shortPct = (asset.sellRatio * 100).toFixed(1);
-
-      // Analyze bias stance and write commentary
-      let stance = 'NEUTRAL (Tunggu Distribusi)';
-      let commentary = '';
-      let styleClass = 'border-green-500/20 bg-green-500/[0.03]';
-
-      if (asset.status === 'TRAPPED_LONG') {
-        stance = 'STRONG BEARISH (Mencari Trigger Sell)';
-        commentary = `Retail terperangkap membeli di dasar (*falling knife*) dengan posisi Long ${longPct}%. Likuiditas stop loss mereka menumpuk di bawah Swing Low terkini. Perusahaan institusi (smart money) cenderung menyapu stop loss ini untuk mendapatkan likuiditas jual. Tunggu koreksi ke area Fibonacci 0.500 atau 0.618 untuk mencari entry Jual.`;
-        styleClass = 'border-red-500/25 bg-red-500/[0.03]';
-      } else if (asset.status === 'TRAPPED_SHORT') {
-        stance = 'STRONG BULLISH (Mencari Trigger Buy)';
-        commentary = `Retail trader terperangkap shorting melawan momentum naik (*top picking*) dengan posisi Short ${shortPct}%. Likuiditas order beli stop loss mereka menumpuk di atas Swing High terkini. Gunakan zona Fibonacci retracement 0.500 - 0.618 sebagai diskon masuk Beli saat retest.`;
-        styleClass = 'border-green-500/25 bg-green-500/[0.03]';
-      } else if (asset.buyRatio > 0.60) {
-        stance = 'BEARISH (Bias Sell)';
-        commentary = `Akumulasi posisi Long retail mencapai ${longPct}%. Sesuai logika contrarian, bias pergerakan cenderung menurun karena pembeli retail kehabisan modal untuk mempertahankan dorongan ke atas. Targetkan kelanjutan struktur korektif ke arah bawah.`;
-        styleClass = 'border-red-400/20 bg-red-400/[0.01]';
-      } else if (asset.sellRatio > 0.60) {
-        stance = 'BULLISH (Bias Buy)';
-        commentary = `Penjual retail mendominasi pasar dengan ${shortPct}% Short. Likuiditas pembelian terkonsentrasi di atas resisten untuk menyapu order stop loss mereka. Peluang beli lebih disukai.`;
-        styleClass = 'border-green-400/20 bg-green-400/[0.01]';
-      } else {
-        commentary = `Rasio sentimen retail berada di wilayah netral (${longPct}% Long vs ${shortPct}% Short). Tidak ada keunggulan contrarian yang jelas saat ini. Disarankan menunggu hingga rasio bergeser melebihi 60% di salah satu sisi.`;
-      }
-
-      return (
-        <div class="space-y-4">
-          <div class={`rounded-2xl border p-5 ${styleClass}`}>
-            <h4 class="text-xs font-bold uppercase tracking-wider text-green-400">Contrarian Playbook</h4>
-            <div class="mt-3">
-              <span class="text-[10px] text-zinc-500 uppercase font-mono">Bias Stance</span>
-              <p class="text-sm font-bold text-white mt-0.5">{stance}</p>
-            </div>
-            <div class="mt-2">
-              <span class="text-[10px] text-zinc-500 uppercase font-mono">Rencana Analisis Taktis</span>
-              <p class="text-xs text-zinc-300 mt-1 leading-relaxed">{commentary}</p>
-            </div>
-          </div>
-
-          {asset.indicators && asset.indicators.harmonicPattern && (() => {
-            const hp = asset.indicators.harmonicPattern;
-            const pattern = hp.pattern || '';
-            const confidence = hp.confidence || 0;
-            const ratios = hp.ratios || {};
-            const isBullish = pattern.includes('Bullish');
-            const isSharkOrCypher = pattern.includes('Shark') || pattern.includes('Cypher');
-
-            return (
-              <div class={`rounded-2xl border p-5 ${
-                isBullish
-                  ? 'border-green-500/20 bg-green-500/[0.02]'
-                  : 'border-orange-500/20 bg-orange-500/[0.02]'
-              }`}>
-                <div class="flex items-center justify-between border-b border-white/5 pb-2">
-                  <h4 class="text-xs font-bold uppercase tracking-wider text-white">Harmonic Pattern Detected</h4>
-                  <span class={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                    isBullish
-                      ? 'bg-green-500/10 text-green-400'
-                      : 'bg-orange-500/10 text-orange-400'
-                  }`}>
-                    {pattern}
-                  </span>
-                </div>
-                
-                <div class="mt-3 space-y-2 text-xs">
-                  <div class="flex justify-between">
-                    <span class="text-zinc-500">Pattern Match Confidence</span>
-                    <span class="text-white font-mono font-bold">{confidence}%</span>
-                  </div>
-                  <div class="flex justify-between border-b border-white/[0.03] pb-1">
-                    <span class="text-zinc-500">Rasio AB Retracement</span>
-                    <span class="text-zinc-300 font-mono">{ratios.AB !== undefined ? ratios.AB : 'N/A'}</span>
-                  </div>
-                  <div class="flex justify-between border-b border-white/[0.03] pb-1">
-                    <span class="text-zinc-500">Rasio BC Retracement</span>
-                    <span class="text-zinc-300 font-mono">{ratios.BC !== undefined ? ratios.BC : 'N/A'}</span>
-                  </div>
-                  <div class="flex justify-between border-b border-white/[0.03] pb-1">
-                    <span class="text-zinc-500">Rasio XD Retracement (D)</span>
-                    <span class="text-zinc-300 font-mono">{ratios.XD !== undefined ? ratios.XD : 'N/A'}</span>
-                  </div>
-                </div>
-
-                <div class="mt-4 rounded-lg bg-zinc-900/40 p-2.5 text-[11px] leading-relaxed text-zinc-300">
-                  <strong>Confluence Analysis:</strong> Pola <strong>{pattern}</strong> selesai terbentuk di Point D. 
-                  {isBullish
-                    ? ' Hal ini mengonfirmasi zona pembalikan arah naik (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang shorting. Sinyal beli terkonfirmasi.'
-                    : ' Hal ini mengonfirmasi zona pembalikan arah turun (PRZ) yang sejajar dengan ketidakseimbangan sentimen retail yang sedang melakukan pembelian. Sinyal jual terkonfirmasi.'
-                  }
-                </div>
-
-                {/* Timeframe Accuracy Rating / Alert */}
-                <div class="mt-3 text-[11px] leading-relaxed">
-                  {(() => {
-                    const tf = timeframe || 'H1';
-                    
-                    if (tf === 'M1' || tf === 'M5' || tf === 'M15') {
-                      return (
-                        <div class="rounded-lg border border-red-500/20 bg-red-950/10 p-2.5 text-red-400">
-                          <strong class="text-red-400 block uppercase mb-1">⚠️ Akurasi Sangat Rendah (TF {tf})</strong>
-                          Sistem mendeteksi pola di Timeframe Rendah (M1-M15). Spread/slippage mengambil porsi besar dari panjang leg, dan swing point sering kali berupa stop-hunt alogaritma, bukan pergeseran supply-demand riil. Gunakan TF ini <strong>hanya untuk mencari konfirmasi entri Stochastic/BB</strong> yang tajam setelah zona PRZ dihitung dari H1-H4.
-                        </div>
-                      );
-                    } else if (tf === 'M30' || tf === 'H1') {
-                      return (
-                        <div class="rounded-lg border border-orange-500/20 bg-orange-950/10 p-2.5 text-orange-400">
-                          <strong class="text-orange-400 block uppercase mb-1">⚠️ TF Menengah / Butuh Konfirmasi (TF {tf})</strong>
-                          Sinyal mulai layak{isSharkOrCypher ? ' (Shark/Cypher lebih toleran terhadap intraday)' : ''}, tetapi pola rentan invalid oleh 1-2 candle noise. Wajib mencari konfirmasi tambahan seperti divergence Stochastic/RSI dan pola candlestick (pinbar/engulfing) di area PRZ.
-                        </div>
-                      );
-                    } else if (tf === 'H4') {
-                      return (
-                        <div class="rounded-lg border border-green-500/20 bg-green-950/10 p-2.5 text-green-400">
-                          <strong class="text-green-400 block uppercase mb-1">✨ Sweet Spot Harmonic (TF {tf})</strong>
-                          Titik ideal terbaik! Swing point merepresentasikan sesi trading institusional yang bersih dari noise acak. Akurasi geometri Fibonacci berada pada level optimum dengan kuantitas setup reguler.
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <div class="rounded-lg border border-emerald-500/20 bg-emerald-950/10 p-2.5 text-emerald-400">
-                          <strong class="text-emerald-400 block uppercase mb-1">💎 Akurasi Maksimal (TF {tf})</strong>
-                          Presisi geometri tertinggi dengan tingkat noise terendah. Pola sangat valid, namun membutuhkan waktu berminggu-minggu untuk terbentuk sempurna. Setup ini sangat berharga.
-                        </div>
-                      );
-                    }
-                  })()}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      );
-    }
-
-    // ====================================================
-    // Trend-Following (Non-Contrarian) Playbook Sub-Component
-    // ====================================================
-    function TrendFollowingPlaybook({ asset }) {
-      const indicators = asset.indicators || {};
-      const rsi = indicators.rsi !== undefined ? indicators.rsi : 50;
-      const sma20 = indicators.sma20 !== undefined ? indicators.sma20 : asset.price;
-      const isBullish = rsi > 50 && asset.price > sma20;
-      let direction = 'BULLISH TREND';
-      let commentary = '';
-      let styleClass = 'border-green-500/25 bg-green-500/[0.03]';
-
-      if (isBullish) {
-        direction = 'BULLISH TREND (Trend-Following)';
-        commentary = `Harga berada di atas rata-rata pergerakan harian (SMA 20) dan RSI (${rsi}) berada di wilayah bullish (>50). Momentum pembeli mendominasi struktur pasar. Sinyal non-contrarian merekomendasikan untuk mengikuti tren naik utama (Buy Strength) dengan menargetkan area resisten berikutnya.`;
-        styleClass = 'border-green-500/25 bg-green-500/[0.03]';
-      } else {
-        direction = 'BEARISH TREND (Trend-Following)';
-        commentary = `Harga ditransaksikan di bawah SMA 20 dan RSI (${rsi}) berada di wilayah bearish (<50). Tren utama didominasi oleh penjual. Sinyal non-contrarian merekomendasikan untuk mengikuti momentum penurunan utama (Sell Rallies) untuk menargetkan level support terendah berikutnya.`;
-        styleClass = 'border-red-500/25 bg-red-500/[0.03]';
-      }
-
-      return (
-        <div class={`rounded-2xl border p-5 ${styleClass}`}>
-          <h4 class="text-xs font-bold uppercase tracking-wider text-green-400 font-heading">Non-Contrarian Signal</h4>
-          <div class="mt-3">
-            <span class="text-[10px] text-zinc-500 uppercase font-mono">Trend Direction</span>
-            <p class="text-sm font-bold text-white mt-0.5">{direction}</p>
-          </div>
-          <div class="mt-2">
-            <span class="text-[10px] text-zinc-500 uppercase font-mono">Rencana Analisis Tren</span>
-            <p class="text-xs text-zinc-300 mt-1 leading-relaxed font-sans">{commentary}</p>
-          </div>
-        </div>
       );
     }
 
