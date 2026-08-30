@@ -1981,7 +1981,7 @@
                       {showKeyInput && (
                         <div class="mt-3 p-3 rounded-xl bg-zinc-900/90 border border-violet-500/30 text-xs space-y-2 font-mono">
                           <p class="text-[10px] text-zinc-400">Masukkan Gemini API Key gratis dari Google AI Studio (aistudio.google.com):</p>
-                          <p class="text-[9px] text-amber-400/80">Perhatian: key akan dikirim ke backend Sentinel (server Anda) untuk memanggil API Gemini, dan disimpan di browser Anda. Gunakan key terpisah/khusus jika tidak ingin membaginya dengan operator situs.</p>
+                          <p class="text-[9px] text-amber-400/80">Perhatian: key akan dikirim ke backend Sentinel (server Anda) untuk memanggil API Gemini, dan hanya dipakai selama sesi ini (tidak disimpan di browser). Gunakan key terpisah/khusus jika tidak ingin membaginya dengan operator situs.</p>
                           <div class="flex gap-2">
                             <input
                               type="password"
@@ -1992,7 +1992,8 @@
                             />
                             <button
                               onClick={() => {
-                                if (userApiKey) localStorage.setItem('sentinel_gemini_key', userApiKey);
+                                // Key is only used in-memory for this session; it is NOT persisted
+                                // to localStorage to avoid exposing the secret to any XSS/data breach.
                                 setKeyUsedThisSession(true);
                                 setShowKeyInput(false);
                                 fetchLiveLlmAnalysis(userApiKey || undefined);

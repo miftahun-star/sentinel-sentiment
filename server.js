@@ -13,13 +13,15 @@ const APP_ORIGIN = process.env.APP_ORIGIN || 'https://sentinel-sentiment.vercel.
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || origin === APP_ORIGIN || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    // Allow same-origin (no Origin header) and the exact production/custom origin.
+    // Localhost is only allowed for explicit local development (APP_ORIGIN unset override).
+    if (!origin || origin === APP_ORIGIN || origin === process.env.DEV_ORIGIN) {
       return cb(null, true);
     }
     return cb(null, false);
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type', 'x-gemini-api-key']
 }));
 
 app.use((req, res, next) => {
@@ -299,10 +301,6 @@ function detectHarmonics(candles, period = 'H1') {
   }
 
   const pivots = getPivots(candles, strength);
-  
-  const len = candles.length;
-  const isBullish = candles[len - 1].close > candles[Math.max(0, len - 20)].close;
-  const patternType = isBullish ? 'Bullish' : 'Bearish';
 
   if (pivots.length >= 4) {
     const pX = pivots[pivots.length - 4];
@@ -1182,39 +1180,50 @@ Kembalikan jawaban HANYA dalam format JSON valid tanpa markdown fence berikut:
           const geminiData = await geminiRes.json();
           const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
           if (rawText) {
-            const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const parsed = JSON.parse(cleanJson);
-
-            // Schema/type safety: coerce numeric fields to finite numbers and isBullish to boolean
-            const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
-            parsed.isBullish = parsed.isBullish === true;
-            parsed.entry = num(parsed.entry);
-            parsed.sl = num(parsed.sl);
-            parsed.tp = num(parsed.tp);
-            parsed.confidence = num(parsed.confidence);
-            if (parsed.entry == null) parsed.entry = price;
-            if (parsed.confidence == null) parsed.confidence = 80;
-
-            // Double check SL / TP logic safety
-            let isBull = parsed.isBullish;
-            let slVal = parsed.sl;
-            let tpVal = parsed.tp;
-
-            if (isBull && (slVal == null || tpVal == null || slVal >= price || tpVal <= price)) {
-              slVal = parseFloat((price * 0.985).toFixed(price > 100 ? 2 : 4));
-              tpVal = parseFloat((price * 1.03).toFixed(price > 100 ? 2 : 4));
-            } else if (!isBull && (slVal == null || tpVal == null || slVal <= price || tpVal >= price)) {
-              slVal = parseFloat((price * 1.015).toFixed(price > 100 ? 2 : 4));
-              tpVal = parseFloat((price * 0.97).toFixed(price > 100 ? 2 : 4));
+            let parsed;
+            try {
+              const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+              parsed = JSON.parse(cleanJson);
+            } catch (jsonErr) {
+              // Gemini occasionally returns markdown/non-JSON: fall back to deterministic engine
+              console.warn('Gemini returned non-JSON, ignoring AI payload:', jsonErr.message);
+              parsed = null;
             }
 
-            return res.json({
-              ...parsed,
-              sl: slVal,
-              tp: tpVal,
-              isLiveLLM: true,
-              model: 'Gemini 2.0 Flash (Live Google LLM)'
-            });
+            if (parsed && typeof parsed === 'object') {
+              // Schema/type safety: coerce numeric fields to finite numbers and isBullish to boolean
+              const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+              parsed.isBullish = parsed.isBullish === true;
+              parsed.entry = num(parsed.entry);
+              parsed.sl = num(parsed.sl);
+              parsed.tp = num(parsed.tp);
+              parsed.confidence = num(parsed.confidence);
+              if (parsed.entry == null) parsed.entry = price;
+              if (parsed.confidence == null) parsed.confidence = 80;
+              // Enforce the advertised 65-98 confidence contract
+              parsed.confidence = Math.max(65, Math.min(98, parsed.confidence));
+
+              // Double check SL / TP logic safety
+              let isBull = parsed.isBullish;
+              let slVal = parsed.sl;
+              let tpVal = parsed.tp;
+
+              if (isBull && (slVal == null || tpVal == null || slVal >= price || tpVal <= price)) {
+                slVal = parseFloat((price * 0.985).toFixed(price > 100 ? 2 : 4));
+                tpVal = parseFloat((price * 1.03).toFixed(price > 100 ? 2 : 4));
+              } else if (!isBull && (slVal == null || tpVal == null || slVal <= price || tpVal >= price)) {
+                slVal = parseFloat((price * 1.015).toFixed(price > 100 ? 2 : 4));
+                tpVal = parseFloat((price * 0.97).toFixed(price > 100 ? 2 : 4));
+              }
+
+              return res.json({
+                ...parsed,
+                sl: slVal,
+                tp: tpVal,
+                isLiveLLM: true,
+                model: 'Gemini 2.0 Flash (Live Google LLM)'
+              });
+            }
           }
         } else {
           console.warn("Gemini API call returned status:", geminiRes.status);
