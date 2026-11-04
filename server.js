@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -20,8 +21,9 @@ app.use(cors({
     }
     return cb(null, false);
   },
+  credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-gemini-api-key']
+  allowedHeaders: ['Content-Type', 'x-gemini-api-key', 'x-sentinel-auth', 'authorization']
 }));
 
 app.use((req, res, next) => {
@@ -71,6 +73,47 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   }
 }
 
+// In-memory TTL cache to reduce upstream API calls (Bybit/Yahoo/CoinGecko).
+// On Vercel serverless each warm instance keeps its own copy; this primarily
+// deduplicates bursty requests within a single instance and is harmless otherwise.
+const cacheStore = new Map();
+const CACHE_STATS = { hits: 0, misses: 0 };
+function ttlGet(key) {
+  const entry = cacheStore.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    cacheStore.delete(key);
+    return undefined;
+  }
+  CACHE_STATS.hits++;
+  return entry.value;
+}
+function ttlSet(key, value, ttlMs) {
+  cacheStore.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+// Async upstream fetch that consults the TTL cache first
+async function cachedFetchJson(key, url, options = {}, timeoutMs = 10000, ttlMs = 10000) {
+  const cached = ttlGet(key);
+  if (cached !== undefined) return cached;
+  CACHE_STATS.misses++;
+  try {
+    const res = await fetchWithTimeout(url, options, timeoutMs);
+    if (!res.ok) return null;
+    const data = await res.json();
+    ttlSet(key, data, ttlMs);
+    return data;
+  } catch (_) {
+    return null;
+  }
+}
+// Periodically prune expired cache entries to avoid unbounded growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of cacheStore) {
+    if (now > v.expiresAt) cacheStore.delete(k);
+  }
+}, 30 * 1000).unref();
+
 app.use(express.json({ limit: '256kb' }));
 
 // Serve static frontend files from public directory for security
@@ -78,6 +121,145 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ----------------------------------------------------
+// Security & Authentication Gate (Password Protection)
+// ----------------------------------------------------
+const APP_PASSWORD = process.env.APP_PASSWORD || 'sentinel2026';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'sentinel_vault_secret_default_key_2026';
+
+function safeCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const hashA = crypto.createHash('sha256').update(a).digest();
+  const hashB = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
+function createSessionToken() {
+  const expiresAt = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days
+  const payload = `v1:${expiresAt}`;
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+function verifySessionToken(token) {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+  const [payload, sig] = parts;
+  const [version, expiresAtStr] = payload.split(':');
+  if (version !== 'v1') return false;
+
+  const expiresAt = parseInt(expiresAtStr, 10);
+  if (isNaN(expiresAt) || Date.now() > expiresAt) return false;
+
+  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+  const hashSig = crypto.createHash('sha256').update(sig).digest();
+  const hashExpected = crypto.createHash('sha256').update(expectedSig).digest();
+  return crypto.timingSafeEqual(hashSig, hashExpected);
+}
+
+function getCookie(req, name) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+  const match = cookieHeader.match(new RegExp('(?:^|;\\s*)' + name.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, '\\$1') + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function getAuthToken(req) {
+  const cookieToken = getCookie(req, 'sentinel_session');
+  if (cookieToken) return cookieToken;
+
+  const customHeader = req.headers['x-sentinel-auth'];
+  if (customHeader) return String(customHeader).trim();
+
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+
+  return null;
+}
+
+function isAuthenticated(req) {
+  const token = getAuthToken(req);
+  return verifySessionToken(token);
+}
+
+function isSecureRequest(req) {
+  if (req.headers['x-forwarded-proto'] === 'https') return true;
+  if (req.secure) return true;
+  const host = req.headers.host || '';
+  if (host.includes('localhost') || host.includes('127.0.0.1')) return false;
+  return process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+}
+
+function requireAuth(req, res, next) {
+  if (isAuthenticated(req)) {
+    return next();
+  }
+  return res.status(401).json({
+    error: 'Unauthorized: Sesi tidak valid atau telah kedaluwarsa. Silakan masukkan password akses.',
+    requireLogin: true
+  });
+}
+
+// Rate limiter dedicated to login attempts (max 10 attempts per minute per IP)
+const loginRateBuckets = new Map();
+function loginRateLimit(req, res, next) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const key = String(ip).split(',')[0].trim();
+  const now = Date.now();
+  const bucket = loginRateBuckets.get(key);
+  if (!bucket || now - bucket.resetAt > 60 * 1000) {
+    loginRateBuckets.set(key, { count: 1, resetAt: now + 60 * 1000 });
+    return next();
+  }
+  bucket.count += 1;
+  if (bucket.count > 10) {
+    return res.status(429).json({ error: 'Terlalu banyak percobaan login. Silakan tunggu 1 menit.' });
+  }
+  return next();
+}
+
+app.get('/api/auth/status', (req, res) => {
+  res.set('Cache-Control', 'no-store, private');
+  return res.json({ authenticated: isAuthenticated(req) });
+});
+
+app.post('/api/auth/login', loginRateLimit, (req, res) => {
+  const { password } = req.body || {};
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Kata sandi wajib diisi.' });
+  }
+
+  const configuredPassword = process.env.APP_PASSWORD || 'sentinel2026';
+  if (!safeCompare(password, configuredPassword)) {
+    return res.status(401).json({ error: 'Kata sandi salah. Akses ditolak.' });
+  }
+
+  const token = createSessionToken();
+  res.cookie('sentinel_session', token, {
+    httpOnly: true,
+    secure: isSecureRequest(req),
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    path: '/'
+  });
+
+  res.set('Cache-Control', 'no-store, private');
+  return res.json({
+    success: true,
+    token,
+    message: 'Otorisasi berhasil. Selamat datang di Sentinel Terminal.'
+  });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('sentinel_session', { path: '/' });
+  res.set('Cache-Control', 'no-store, private');
+  return res.json({ success: true, message: 'Sesi telah diakhiri.' });
 });
 
 // ----------------------------------------------------
@@ -546,7 +728,7 @@ function analyzeSentimentAndIndicators(candles, period = 'H1') {
 // ----------------------------------------------------
 // API 1: Crypto Sentiment (Bybit Futures Feed)
 // ----------------------------------------------------
-app.get('/api/sentiment/crypto', rateLimit, async (req, res) => {
+app.get('/api/sentiment/crypto', rateLimit, requireAuth, async (req, res) => {
   const { symbol, period } = req.query;
 
   const ALLOWED_CRYPTO_SYMBOLS = new Set([
@@ -595,9 +777,10 @@ app.get('/api/sentiment/crypto', rateLimit, async (req, res) => {
     // Fetch 200 candles to get accurate longer-period indicators (e.g. SMA 100)
     const klineUrl = `https://api.bytick.com/v5/market/kline?category=linear&symbol=${symbol}&interval=${bybitInterval}&limit=200`;
 
+    // Cache kline (12s) and ratio (15s) to reduce Bybit throttling under bursty multi-asset loads
     const [ratioRes, klineRes] = await Promise.all([
-      fetchWithTimeout(ratioUrl, {}, 8000).then(r => r.json()).catch(() => null),
-      fetchWithTimeout(klineUrl, {}, 8000).then(r => r.json()).catch(() => null)
+      cachedFetchJson(`bybit_ratio_${symbol}_${bybitPeriod}`, ratioUrl, {}, 8000, 15000),
+      cachedFetchJson(`bybit_kline_${symbol}_${bybitInterval}`, klineUrl, {}, 8000, 12000)
     ]);
 
     let candles = [];
@@ -626,16 +809,13 @@ app.get('/api/sentiment/crypto', rateLimit, async (req, res) => {
 
       try {
         if (geckoId) {
-          const gRes = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd&include_24hr_change=true`, {
+          const gData = await cachedFetchJson(`coingecko_${geckoId}`, `https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd&include_24hr_change=true`, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-          }, 8000);
-          if (gRes.ok) {
-            const gData = await gRes.json();
-            if (gData && gData[geckoId]) {
-              geckoPrice = gData[geckoId].usd;
-              geckoChange = gData[geckoId].usd_24h_change;
-              console.log(`CoinGecko price for ${symbol} (${geckoId}): ${geckoPrice}, 24h change: ${geckoChange}`);
-            }
+          }, 8000, 15000);
+          if (gData && gData[geckoId]) {
+            geckoPrice = gData[geckoId].usd;
+            geckoChange = gData[geckoId].usd_24h_change;
+            console.log(`CoinGecko price for ${symbol} (${geckoId}): ${geckoPrice}, 24h change: ${geckoChange}`);
           }
         }
       } catch (e) {
@@ -766,7 +946,7 @@ app.get('/api/sentiment/crypto', rateLimit, async (req, res) => {
       currentPrice = candles[candles.length - 1].close;
 
       const tickerUrl = `https://api.bytick.com/v5/market/tickers?category=linear&symbol=${symbol}`;
-      const tickerRes = await fetchWithTimeout(tickerUrl, {}, 8000).then(r => r.json()).catch(() => null);
+      const tickerRes = await cachedFetchJson(`bybit_ticker_${symbol}`, tickerUrl, {}, 8000, 15000);
       if (tickerRes?.result?.list?.[0]) {
         change24h = parseFloat(tickerRes.result.list[0].price24hPcnt) * 100;
       } else {
@@ -819,6 +999,9 @@ app.get('/api/sentiment/crypto', rateLimit, async (req, res) => {
 
     const safeChange = Number.isFinite(change24h) ? change24h : 0;
 
+    // Realtime-ish data: allow CDN/edge caching for a short window to absorb bursts
+    res.set('Cache-Control', 'public, max-age=10, s-maxage=10, stale-while-revalidate=30');
+
     res.json({
       symbol,
       price: currentPrice,
@@ -839,7 +1022,7 @@ app.get('/api/sentiment/crypto', rateLimit, async (req, res) => {
 // ----------------------------------------------------
 // API 2: Forex & Gold Sentiment (Yahoo Finance Feed)
 // ----------------------------------------------------
-app.get('/api/sentiment/forex', rateLimit, async (req, res) => {
+app.get('/api/sentiment/forex', rateLimit, requireAuth, async (req, res) => {
   const { symbol, period } = req.query;
 
   const ALLOWED_PERIODS = new Set(['M1','M5','M15','M30','H1','H2','H3','H4','D1','W1','1M','1month']);
@@ -873,26 +1056,13 @@ app.get('/api/sentiment/forex', rateLimit, async (req, res) => {
     else if (period === '1M' || period === '1month') { yfInterval = '1mo'; yfRange = '1800d'; }
 
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yfInterval}&range=${yfRange}`;
-    let response;
-    try {
-      response = await fetchWithTimeout(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      }, 10000);
-    } catch (yfErr) {
-      console.warn('Yahoo fetch failed (forex):', yfErr.message);
-      return res.status(502).json({ error: 'Failed to fetch klines from Yahoo Finance' });
-    }
-    let data;
-    try {
-      data = await response.json();
-    } catch (jsonErr) {
-      console.warn('Yahoo JSON parse failed (forex):', jsonErr.message);
-      return res.status(502).json({ error: 'Failed to fetch klines from Yahoo Finance' });
-    }
+    const data = await cachedFetchJson(`yahoo_${symbol}_${yfInterval}_${yfRange}`, url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    }, 10000, 15000);
 
-    if (!data.chart?.result?.[0]) {
+    if (!data?.chart?.result?.[0]) {
       return res.status(502).json({ error: 'Failed to fetch klines from Yahoo Finance' });
     }
 
@@ -961,6 +1131,8 @@ app.get('/api/sentiment/forex', rateLimit, async (req, res) => {
       hp.points.D.index = clamp(hp.points.D.index);
     }
 
+    res.set('Cache-Control', 'public, max-age=10, s-maxage=10, stale-while-revalidate=30');
+
     res.json({
       symbol,
       price: currentPrice,
@@ -980,10 +1152,15 @@ app.get('/api/sentiment/forex', rateLimit, async (req, res) => {
 
 // API 3: Live Real-Time Financial News Feed (ForexLive/Yahoo RSS)
 // ----------------------------------------------------
-// API 3: Live Real-Time Financial News Feed (ForexLive/Yahoo RSS)
-// ----------------------------------------------------
-app.get('/api/news', rateLimit, async (req, res) => {
+app.get('/api/news', rateLimit, requireAuth, async (req, res) => {
   try {
+    // Serve a cached news result for a short window to avoid re-hitting RSS feeds
+    const cachedNews = ttlGet('news_feed');
+    if (cachedNews !== undefined) {
+      res.set('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=120');
+      return res.json({ news: cachedNews });
+    }
+
     const urls = [
       'https://www.forexlive.com/feed',
       'https://finance.yahoo.com/news/rss',
@@ -1091,6 +1268,8 @@ app.get('/api/news', rateLimit, async (req, res) => {
     // Cap at 30 items for news terminal richness
     const news = parsedNews.slice(0, 30);
 
+    ttlSet('news_feed', news, 45 * 1000);
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=120');
     res.json({ news });
   } catch (err) {
     console.error('news endpoint error:', err.message);
@@ -1101,7 +1280,7 @@ app.get('/api/news', rateLimit, async (req, res) => {
 // ----------------------------------------------------
 // API 4: Live Gemini 2.0 Flash LLM AI Assessment
 // ----------------------------------------------------
-app.post('/api/ai-assessment', rateLimit, async (req, res) => {
+app.post('/api/ai-assessment', rateLimit, requireAuth, async (req, res) => {
   try {
     const { asset, newsList } = req.body || {};
     if (!asset || typeof asset !== 'object' || !asset.id || typeof asset.id !== 'string') {
