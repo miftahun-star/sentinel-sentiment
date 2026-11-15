@@ -330,10 +330,8 @@
       const [isLoggingIn, setIsLoggingIn] = useState(false);
 
       const authFetch = async (url, options = {}) => {
-        const token = localStorage.getItem('sentinel_auth_token');
         const headers = {
-          ...(options.headers || {}),
-          ...(token ? { 'x-sentinel-auth': token } : {})
+          ...(options.headers || {})
         };
         const res = await fetch(url, {
           ...options,
@@ -341,7 +339,6 @@
           credentials: 'same-origin'
         });
         if (res.status === 401) {
-          localStorage.removeItem('sentinel_auth_token');
           setAuthState({ checking: false, authenticated: false });
         }
         return res;
@@ -351,9 +348,7 @@
         let isMounted = true;
         const checkAuth = async () => {
           try {
-            const token = localStorage.getItem('sentinel_auth_token');
             const res = await fetch('/api/auth/status', {
-              headers: token ? { 'x-sentinel-auth': token } : {},
               credentials: 'same-origin'
             });
             if (res.ok) {
@@ -390,9 +385,6 @@
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            if (data.token) {
-              localStorage.setItem('sentinel_auth_token', data.token);
-            }
             setPasswordInput('');
             setAuthState({ checking: false, authenticated: true });
           } else {
@@ -409,7 +401,6 @@
         try {
           await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
         } catch (_) {}
-        localStorage.removeItem('sentinel_auth_token');
         setMarketData({});
         setNewsList([]);
         setAuthState({ checking: false, authenticated: false });
@@ -1279,14 +1270,12 @@
         setIsLlmLoading(true);
         // Only forward a client-provided Gemini key when the user explicitly requested it this session.
         const keyToUse = customKey !== undefined ? customKey : (keyUsedThisSession ? userApiKey : '');
-        const token = localStorage.getItem('sentinel_auth_token');
         try {
           const res = await fetch('/api/ai-assessment', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { 'x-sentinel-auth': token } : {}),
               ...(keyToUse ? { 'x-gemini-api-key': keyToUse } : {})
             },
             body: JSON.stringify({ asset, newsList })

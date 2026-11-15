@@ -8,6 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.disable('x-powered-by'); // F-10: do not advertise the framework
+// F-07: trust exactly ONE proxy hop (Vercel's edge). Required so req.ip resolves
+// to the real client address. Do NOT use `true` here - that re-enables XFF spoofing.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 const APP_ORIGIN = process.env.APP_ORIGIN || 'https://sentinel-sentiment.vercel.app';
@@ -32,6 +36,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
   next();
 });
 
@@ -40,7 +45,8 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 60; // requests per IP per window
 const rateBuckets = new Map();
 function rateLimit(req, res, next) {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  // F-07: use Express's trust-proxy-aware req.ip, never the raw client header
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const key = String(ip).split(',')[0].trim();
   const now = Date.now();
   const bucket = rateBuckets.get(key);
@@ -126,8 +132,34 @@ app.get('/', (req, res) => {
 // ----------------------------------------------------
 // Security & Authentication Gate (Password Protection)
 // ----------------------------------------------------
-const APP_PASSWORD = process.env.APP_PASSWORD || 'sentinel2026';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'sentinel_vault_secret_default_key_2026';
+// F-01 / F-02: fail closed. Never fall back to a value from the public repo.
+const APP_PASSWORD = process.env.APP_PASSWORD;
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!APP_PASSWORD) {
+  throw new Error('FATAL: APP_PASSWORD environment variable is required.');
+}
+if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
+  throw new Error('FATAL: SESSION_SECRET (>= 32 chars) is required.');
+}
+
+// F-04: short session lifetime
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// F-03: revoked session signatures. Per-instance on serverless; for revocation
+// across instances back this Map with Vercel KV / Upstash Redis.
+const revokedSessions = new Map();
+function pruneRevoked() {
+  const now = Date.now();
+  for (const [sig, exp] of revokedSessions) if (now > exp) revokedSessions.delete(sig);
+}
+function revokeToken(token) {
+  if (!token || typeof token !== 'string') return;
+  const [payload, sig] = token.split('.');
+  if (!payload || !sig) return;
+  const exp = parseInt(payload.split(':')[1] || '0', 10);
+  if (!Number.isFinite(exp)) return;
+  if (exp > Date.now()) revokedSessions.set(sig, exp);
+}
 
 function safeCompare(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -137,7 +169,7 @@ function safeCompare(a, b) {
 }
 
 function createSessionToken() {
-  const expiresAt = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days
+  const expiresAt = Date.now() + SESSION_TTL_MS;
   const payload = `v1:${expiresAt}`;
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
   return `${payload}.${sig}`;
@@ -153,6 +185,10 @@ function verifySessionToken(token) {
 
   const expiresAt = parseInt(expiresAtStr, 10);
   if (isNaN(expiresAt) || Date.now() > expiresAt) return false;
+
+  // F-03: reject tokens revoked by logout while still inside their lifetime
+  pruneRevoked();
+  if (revokedSessions.has(sig)) return false;
 
   const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
   const hashSig = crypto.createHash('sha256').update(sig).digest();
@@ -208,7 +244,8 @@ function requireAuth(req, res, next) {
 // Rate limiter dedicated to login attempts (max 10 attempts per minute per IP)
 const loginRateBuckets = new Map();
 function loginRateLimit(req, res, next) {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  // F-07: use Express's trust-proxy-aware req.ip, never the raw client header
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const key = String(ip).split(',')[0].trim();
   const now = Date.now();
   const bucket = loginRateBuckets.get(key);
@@ -222,6 +259,13 @@ function loginRateLimit(req, res, next) {
   }
   return next();
 }
+
+// F-08: no-store on every /api/auth response, including early 4xx returns
+app.use('/api/auth', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, private, max-age=0');
+  res.set('Pragma', 'no-cache');
+  next();
+});
 
 app.get('/api/auth/status', (req, res) => {
   res.set('Cache-Control', 'no-store, private');
@@ -244,19 +288,20 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
     httpOnly: true,
     secure: isSecureRequest(req),
     sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    maxAge: SESSION_TTL_MS,
     path: '/'
   });
 
   res.set('Cache-Control', 'no-store, private');
   return res.json({
     success: true,
-    token,
     message: 'Otorisasi berhasil. Selamat datang di Sentinel Terminal.'
   });
 });
 
 app.post('/api/auth/logout', (req, res) => {
+  // F-03: actually revoke the presented token, not just the browser cookie
+  revokeToken(getAuthToken(req));
   res.clearCookie('sentinel_session', { path: '/' });
   res.set('Cache-Control', 'no-store, private');
   return res.json({ success: true, message: 'Sesi telah diakhiri.' });

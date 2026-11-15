@@ -5,10 +5,11 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "APP_PASSWORD=TestPass123Strong SESSION_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef NODE_ENV=production node security-test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.22.3"
   }
 }
